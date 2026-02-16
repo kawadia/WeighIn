@@ -73,6 +73,59 @@ final class AppRepository: ObservableObject {
         }
     }
 
+    func updateWeightLog(
+        _ original: WeightLog,
+        weight: Double,
+        timestamp: Date,
+        noteText: String
+    ) {
+        let trimmedNote = noteText.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        do {
+            var noteID = original.noteID
+
+            if let existingNoteID = original.noteID {
+                if trimmedNote.isEmpty {
+                    try store.deleteNote(id: existingNoteID)
+                    noteID = nil
+                } else {
+                    let note = NoteEntry(id: existingNoteID, timestamp: timestamp, text: trimmedNote)
+                    try store.update(note)
+                    noteID = existingNoteID
+                }
+            } else if !trimmedNote.isEmpty {
+                let note = NoteEntry(timestamp: timestamp, text: trimmedNote)
+                try store.insert(note)
+                noteID = note.id
+            }
+
+            let updated = WeightLog(
+                id: original.id,
+                timestamp: timestamp,
+                weight: weight,
+                unit: original.unit,
+                source: original.source,
+                noteID: noteID
+            )
+            try store.update(updated)
+            loadAll()
+        } catch {
+            lastErrorMessage = "Could not update entry: \(error.localizedDescription)"
+        }
+    }
+
+    func deleteWeightLog(_ log: WeightLog) {
+        do {
+            if let noteID = log.noteID {
+                try store.deleteNote(id: noteID)
+            }
+            try store.deleteWeightLog(id: log.id)
+            loadAll()
+        } catch {
+            lastErrorMessage = "Could not delete entry: \(error.localizedDescription)"
+        }
+    }
+
     func updateSettings(_ updated: AppSettings) {
         do {
             try store.upsert(settings: updated)
@@ -85,6 +138,11 @@ final class AppRepository: ObservableObject {
         } catch {
             lastErrorMessage = "Could not save settings: \(error.localizedDescription)"
         }
+    }
+
+    func completeOnboarding(with updatedSettings: AppSettings, profile updatedProfile: UserProfile) {
+        updateSettings(updatedSettings)
+        updateProfile(updatedProfile)
     }
 
     func updateProfile(_ updated: UserProfile) {

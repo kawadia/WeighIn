@@ -191,7 +191,8 @@ struct SettingsView: View {
                 defaultUnit: defaultUnit,
                 reminderEnabled: reminderEnabled,
                 reminderHour: hour,
-                reminderMinute: minute
+                reminderMinute: minute,
+                hasCompletedOnboarding: repository.settings.hasCompletedOnboarding
             )
         )
     }

@@ -91,6 +91,21 @@ final class SQLiteStore {
         )
     }
 
+    func update(_ note: NoteEntry) throws {
+        try execute(
+            """
+            UPDATE notes
+            SET timestamp = ?, text = ?
+            WHERE id = ?;
+            """,
+            bindings: [
+                .double(note.timestamp.timeIntervalSince1970),
+                .text(note.text),
+                .text(note.id)
+            ]
+        )
+    }
+
     func insert(_ log: WeightLog) throws {
         try execute(
             """
@@ -108,10 +123,48 @@ final class SQLiteStore {
         )
     }
 
+    func update(_ log: WeightLog) throws {
+        try execute(
+            """
+            UPDATE weight_logs
+            SET timestamp = ?, weight = ?, unit = ?, source = ?, note_id = ?
+            WHERE id = ?;
+            """,
+            bindings: [
+                .double(log.timestamp.timeIntervalSince1970),
+                .double(log.weight),
+                .text(log.unit.rawValue),
+                .text(log.source.rawValue),
+                log.noteID.map(SQLiteValue.text) ?? .null,
+                .text(log.id)
+            ]
+        )
+    }
+
+    func deleteWeightLog(id: String) throws {
+        try execute(
+            """
+            DELETE FROM weight_logs
+            WHERE id = ?;
+            """,
+            bindings: [.text(id)]
+        )
+    }
+
+    func deleteNote(id: String) throws {
+        try execute(
+            """
+            DELETE FROM notes
+            WHERE id = ?;
+            """,
+            bindings: [.text(id)]
+        )
+    }
+
     func fetchSettings() throws -> AppSettings {
         let settings: [AppSettings] = try query(
             sql: """
-            SELECT default_unit, reminder_enabled, reminder_hour, reminder_minute
+            SELECT default_unit, reminder_enabled, reminder_hour, reminder_minute, has_completed_onboarding
             FROM app_settings
             WHERE id = 1;
             """
@@ -120,7 +173,8 @@ final class SQLiteStore {
                 defaultUnit: WeightUnit(rawValue: string(from: statement, index: 0)) ?? .lbs,
                 reminderEnabled: sqlite3_column_int(statement, 1) == 1,
                 reminderHour: Int(sqlite3_column_int(statement, 2)),
-                reminderMinute: Int(sqlite3_column_int(statement, 3))
+                reminderMinute: Int(sqlite3_column_int(statement, 3)),
+                hasCompletedOnboarding: sqlite3_column_int(statement, 4) == 1
             )
         }
 
@@ -130,19 +184,21 @@ final class SQLiteStore {
     func upsert(settings: AppSettings) throws {
         try execute(
             """
-            INSERT INTO app_settings (id, default_unit, reminder_enabled, reminder_hour, reminder_minute)
-            VALUES (1, ?, ?, ?, ?)
+            INSERT INTO app_settings (id, default_unit, reminder_enabled, reminder_hour, reminder_minute, has_completed_onboarding)
+            VALUES (1, ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
             default_unit = excluded.default_unit,
             reminder_enabled = excluded.reminder_enabled,
             reminder_hour = excluded.reminder_hour,
-            reminder_minute = excluded.reminder_minute;
+            reminder_minute = excluded.reminder_minute,
+            has_completed_onboarding = excluded.has_completed_onboarding;
             """,
             bindings: [
                 .text(settings.defaultUnit.rawValue),
                 .int(settings.reminderEnabled ? 1 : 0),
                 .int(Int64(settings.reminderHour)),
-                .int(Int64(settings.reminderMinute))
+                .int(Int64(settings.reminderMinute)),
+                .int(settings.hasCompletedOnboarding ? 1 : 0)
             ]
         )
     }
@@ -222,7 +278,8 @@ final class SQLiteStore {
                 default_unit TEXT NOT NULL,
                 reminder_enabled INTEGER NOT NULL,
                 reminder_hour INTEGER NOT NULL,
-                reminder_minute INTEGER NOT NULL
+                reminder_minute INTEGER NOT NULL,
+                has_completed_onboarding INTEGER NOT NULL DEFAULT 0
             );
             """
         )
@@ -241,8 +298,8 @@ final class SQLiteStore {
 
         try execute(
             """
-            INSERT OR IGNORE INTO app_settings (id, default_unit, reminder_enabled, reminder_hour, reminder_minute)
-            VALUES (1, 'lbs', 1, 7, 0);
+            INSERT OR IGNORE INTO app_settings (id, default_unit, reminder_enabled, reminder_hour, reminder_minute, has_completed_onboarding)
+            VALUES (1, 'lbs', 1, 7, 0, 0);
             """
         )
 
@@ -252,6 +309,42 @@ final class SQLiteStore {
             VALUES (1, NULL, 'undisclosed', NULL, NULL);
             """
         )
+
+        try addOnboardingColumnIfNeeded()
+    }
+
+    private func addOnboardingColumnIfNeeded() throws {
+        guard try !columnExists(name: "has_completed_onboarding", in: "app_settings") else {
+            return
+        }
+
+        try execute(
+            """
+            ALTER TABLE app_settings
+            ADD COLUMN has_completed_onboarding INTEGER NOT NULL DEFAULT 0;
+            """
+        )
+    }
+
+    private func columnExists(name: String, in table: String) throws -> Bool {
+        var statement: OpaquePointer?
+        let sql = "PRAGMA table_info(\(table));"
+        guard sqlite3_prepare_v2(db, sql, -1, &statement, nil) == SQLITE_OK else {
+            throw StoreError.preparationFailed(String(cString: sqlite3_errmsg(db)))
+        }
+
+        defer {
+            sqlite3_finalize(statement)
+        }
+
+        while sqlite3_step(statement) == SQLITE_ROW {
+            guard let pointer = sqlite3_column_text(statement, 1) else { continue }
+            if String(cString: pointer) == name {
+                return true
+            }
+        }
+
+        return false
     }
 
     private func execute(_ sql: String, bindings: [SQLiteValue] = []) throws {
