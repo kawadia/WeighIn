@@ -1,27 +1,27 @@
-# WeighIn iOS App
+# Weigh & Reflect
 
-Local-first SwiftUI app for weight tracking plus contextual notes.
+Local-first iOS app for weight tracking with reflections/notes, trends, and AI-analysis exports.
 
-## Included
-- 3-tab architecture: Log, Charts, Settings
-- Large numeric keypad logging flow
-- Notes linked to entries (or standalone)
-- Past-entry logging
-- CSV import/export
-- Zoomable charts with trend line
-- Local SQLite storage (`Application Support/WeighIn/weighin.sqlite`)
-- Profile fields: birthday, gender, height, avatar path
-- Daily reminder scheduling (default 7:00 AM)
+## Features
+- Fast home logging flow with numeric keypad
+- Unified weight + reflection entries with timestamp
+- Notes support with hold-to-talk voice transcription
+- Trends chart with zoom/scroll and point-level note editing
+- AI Analysis tab with JSON export
+- Import/Export: CSV, JSON, SQLite, Apple Health ZIP
+- Local SQLite data store
+- iCloud Drive folder backup (daily after midnight + manual backup)
+- Backup restore merges data and does not overwrite local conflicts
 
-## Open In Xcode
-The repository includes `WeighIn.xcodeproj`.
+## Run in Xcode
+1. Open `/Users/kawadia/Projects/weighin/WeighIn.xcodeproj`
+2. Select scheme `WeighIn`
+3. Run on iOS simulator or device (iOS 17+)
 
-1. Open `WeighIn.xcodeproj` in Xcode.
-2. Select the `WeighIn` scheme.
-3. Run on iOS 17+ simulator/device.
+## Data & Privacy
+- App data is local-first in SQLite.
+- Privacy Policy: `/Users/kawadia/Projects/weighin/privacy_policy.txt`
+- The app Settings screen also links to the policy on GitHub.
 
-## Data Schema (SQLite)
-- `weight_logs(id, timestamp, weight, unit, source, note_id)`
-- `notes(id, timestamp, text)`
-- `app_settings(id=1, default_unit, reminder_enabled, reminder_hour, reminder_minute)`
-- `user_profile(id=1, birthday, gender, height_cm, avatar_path)`
+## License
+MIT. See `/Users/kawadia/Projects/weighin/LICENSE`.

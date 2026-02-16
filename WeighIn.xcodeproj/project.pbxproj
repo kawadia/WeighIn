@@ -367,7 +367,7 @@
 				DEVELOPMENT_TEAM = HUYBQ9876V;
 				ENABLE_TESTABILITY = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_CFBundleDisplayName = "Weight & Reflect";
+				INFOPLIST_KEY_CFBundleDisplayName = "Weigh & Reflect";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Allow voice notes to be transcribed into reflections.";
 				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Allow selecting a profile image.";
 				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Allow speech recognition for voice note transcription.";
@@ -403,7 +403,7 @@
 				DEFINES_MODULE = YES;
 				DEVELOPMENT_TEAM = HUYBQ9876V;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_CFBundleDisplayName = "Weight & Reflect";
+				INFOPLIST_KEY_CFBundleDisplayName = "Weigh & Reflect";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Allow voice notes to be transcribed into reflections.";
 				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Allow selecting a profile image.";
 				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Allow speech recognition for voice note transcription.";

@@ -36,6 +36,7 @@ struct SettingsView: View {
                 preferencesSection
                 dataSection
                 backupSection
+                legalSection
             }
             .scrollContentBackground(.hidden)
             .background(AppTheme.background)
@@ -176,6 +177,16 @@ struct SettingsView: View {
 
             Button("Export") {
                 showExportFormatPicker = true
+            }
+        }
+    }
+
+    private var legalSection: some View {
+        Section("Legal") {
+            if let privacyPolicyURL = URL(string: "https://github.com/kawadia/WeighIn/blob/main/privacy_policy.txt") {
+                Link(destination: privacyPolicyURL) {
+                    Label("Privacy Policy", systemImage: "doc.text")
+                }
             }
         }
     }

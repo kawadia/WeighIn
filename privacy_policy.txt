@@ -1,0 +1,67 @@
+Privacy Policy — Weigh & Reflect
+
+Effective Date: Feb 16, 2026
+
+Weigh & Reflect (“the App”) is designed to keep your information private. The App stores your data locally on your device and has an optional sync with your own private iCloud. No data ever hits our servers.
+
+1) Information the App Stores
+
+The App may store the following data on your device:
+
+Weight entries (including date/time of entry)
+
+Notes you write (free-text reflections and context)
+
+Settings and preferences (such as units and display preferences)
+
+Imported data (e.g., CSV files you choose to import)
+
+2) Where Your Data Lives
+
+Local storage (default):
+All data is saved locally on your iPhone (or iPad) and remains on your device unless you choose to export it or enable cloud sync.
+
+Optional iCloud sync (your choice):
+If you enable iCloud sync, your data may be stored in your personal iCloud account and synced across your devices signed into the same Apple ID. We do not operate our own cloud database for your App data.
+
+3) Data Sharing
+
+We do not sell your personal data.
+We do not share your data with third parties for advertising or marketing.
+
+If you enable iCloud sync, Apple’s iCloud services process and store your data under Apple’s terms and privacy practices.
+
+4) Analytics, Tracking, and Advertising
+
+The App does not use third-party analytics, advertising SDKs, or cross-app tracking by default.
+If we add analytics or other services in the future, we will update this policy and provide any required in-app choices.
+
+5) Exporting and Importing Data
+
+Import: If you choose to import a CSV file, the file is processed on your device to create entries in the App.
+
+Export: If you export your data (e.g., CSV), you control where it is saved or shared (Files app, email, etc.). Once exported, it is governed by the privacy practices of the destination you choose.
+
+6) Data Deletion
+
+Because your data is stored locally by default:
+
+You can delete entries within the App.
+
+You can delete all App data by deleting the App from your device.
+
+If iCloud sync is enabled, deleting the App may not immediately remove synced data from iCloud. You can manage iCloud storage and deletions in your device settings and iCloud account.
+
+7) Children’s Privacy
+
+The App is not intended for use by children under 13. We do not knowingly collect personal information from children.
+
+8) Changes to This Policy
+
+We may update this Privacy Policy from time to time. If we make changes, we will update the “Effective Date” above and, where appropriate, provide notice in the App.
+
+9) Contact
+
+If you have questions about this policy, contact:
+Email: kawadia@gmail.com
+Developer/Company: Vikas Kawadia
