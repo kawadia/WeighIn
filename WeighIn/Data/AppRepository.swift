@@ -12,16 +12,19 @@ final class AppRepository: ObservableObject {
     private let store: SQLiteStore
     private let syncService: CloudKitSyncService?
     private let cloudKitSyncFeatureEnabled: Bool
+    private let reminderScheduler: (Bool, Int, Int) -> Void
     private var shouldRunSyncAgain = false
     private var forceNextSync = false
 
     init(
         store: SQLiteStore = try! SQLiteStore(),
         syncService: CloudKitSyncService? = nil,
-        cloudKitSyncFeatureEnabled: Bool = false
+        cloudKitSyncFeatureEnabled: Bool = false,
+        reminderScheduler: @escaping (Bool, Int, Int) -> Void = NotificationScheduler.updateDailyReminder
     ) {
         self.store = store
         self.cloudKitSyncFeatureEnabled = cloudKitSyncFeatureEnabled
+        self.reminderScheduler = reminderScheduler
         if cloudKitSyncFeatureEnabled {
             self.syncService = syncService ?? CloudKitSyncService()
         } else {
@@ -43,10 +46,10 @@ final class AppRepository: ObservableObject {
                 try store.upsert(settings: settings)
             }
             profile = try store.fetchProfile()
-            NotificationScheduler.updateDailyReminder(
-                enabled: settings.reminderEnabled,
-                hour: settings.reminderHour,
-                minute: settings.reminderMinute
+            reminderScheduler(
+                settings.reminderEnabled,
+                settings.reminderHour,
+                settings.reminderMinute
             )
         } catch {
             lastErrorMessage = "Could not load local data: \(error.localizedDescription)"
@@ -185,10 +188,10 @@ final class AppRepository: ObservableObject {
         do {
             try store.upsert(settings: persisted)
             settings = persisted
-            NotificationScheduler.updateDailyReminder(
-                enabled: persisted.reminderEnabled,
-                hour: persisted.reminderHour,
-                minute: persisted.reminderMinute
+            reminderScheduler(
+                persisted.reminderEnabled,
+                persisted.reminderHour,
+                persisted.reminderMinute
             )
             queueSyncIfEnabled()
         } catch {

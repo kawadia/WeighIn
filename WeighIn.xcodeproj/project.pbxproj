@@ -28,10 +28,26 @@
 		AA0000000000000000000212 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000112 /* SettingsView.swift */; };
 		AA0000000000000000000213 /* SyncModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000113 /* SyncModels.swift */; };
 		AA0000000000000000000214 /* CloudKitSyncService.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000114 /* CloudKitSyncService.swift */; };
+		AA0000000000000000000215 /* TestSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000115 /* TestSupport.swift */; };
+		AA0000000000000000000216 /* AppRepositoryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000116 /* AppRepositoryTests.swift */; };
+		AA0000000000000000000217 /* CSVCodecTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000117 /* CSVCodecTests.swift */; };
+		AA0000000000000000000218 /* LogViewModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000118 /* LogViewModelTests.swift */; };
+		AA0000000000000000000219 /* ModelDefaultsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000119 /* ModelDefaultsTests.swift */; };
 /* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		AA0000000000000000000023 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = AA0000000000000000000001 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = AA0000000000000000000010;
+			remoteInfo = WeighIn;
+		};
+/* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
 		AA0000000000000000000011 /* WeighIn.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = WeighIn.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		AA000000000000000000001B /* WeighInTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = WeighInTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		AA0000000000000000000100 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
 		AA0000000000000000000101 /* WeighInApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WeighInApp.swift; sourceTree = "<group>"; };
 		AA0000000000000000000102 /* RootTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootTabView.swift; sourceTree = "<group>"; };
@@ -53,10 +69,22 @@
 		AA0000000000000000000112 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		AA0000000000000000000113 /* SyncModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncModels.swift; sourceTree = "<group>"; };
 		AA0000000000000000000114 /* CloudKitSyncService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudKitSyncService.swift; sourceTree = "<group>"; };
+		AA0000000000000000000115 /* TestSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TestSupport.swift; sourceTree = "<group>"; };
+		AA0000000000000000000116 /* AppRepositoryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppRepositoryTests.swift; sourceTree = "<group>"; };
+		AA0000000000000000000117 /* CSVCodecTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CSVCodecTests.swift; sourceTree = "<group>"; };
+		AA0000000000000000000118 /* LogViewModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LogViewModelTests.swift; sourceTree = "<group>"; };
+		AA0000000000000000000119 /* ModelDefaultsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelDefaultsTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
 		AA0000000000000000000013 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		AA000000000000000000001E /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -70,6 +98,7 @@
 			isa = PBXGroup;
 			children = (
 				AA0000000000000000000004 /* WeighIn */,
+				AA000000000000000000000C /* WeighInTests */,
 				AA0000000000000000000003 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -78,6 +107,7 @@
 			isa = PBXGroup;
 			children = (
 				AA0000000000000000000011 /* WeighIn.app */,
+				AA000000000000000000001B /* WeighInTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -166,6 +196,18 @@
 			path = Utilities;
 			sourceTree = "<group>";
 		};
+		AA000000000000000000000C /* WeighInTests */ = {
+			isa = PBXGroup;
+			children = (
+				AA0000000000000000000115 /* TestSupport.swift */,
+				AA0000000000000000000116 /* AppRepositoryTests.swift */,
+				AA0000000000000000000117 /* CSVCodecTests.swift */,
+				AA0000000000000000000118 /* LogViewModelTests.swift */,
+				AA0000000000000000000119 /* ModelDefaultsTests.swift */,
+			);
+			path = WeighInTests;
+			sourceTree = "<group>";
+		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
@@ -186,6 +228,24 @@
 			productReference = AA0000000000000000000011 /* WeighIn.app */;
 			productType = "com.apple.product-type.application";
 		};
+		AA000000000000000000001C /* WeighInTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = AA0000000000000000000020 /* Build configuration list for PBXNativeTarget "WeighInTests" */;
+			buildPhases = (
+				AA000000000000000000001D /* Sources */,
+				AA000000000000000000001E /* Frameworks */,
+				AA000000000000000000001F /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				AA0000000000000000000024 /* PBXTargetDependency */,
+			);
+			name = WeighInTests;
+			productName = WeighInTests;
+			productReference = AA000000000000000000001B /* WeighInTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -197,6 +257,10 @@
 				TargetAttributes = {
 					AA0000000000000000000010 = {
 						CreatedOnToolsVersion = 26.2;
+					};
+					AA000000000000000000001C = {
+						CreatedOnToolsVersion = 26.2;
+						TestTargetID = AA0000000000000000000010;
 					};
 				};
 			};
@@ -214,12 +278,20 @@
 			projectRoot = "";
 			targets = (
 				AA0000000000000000000010 /* WeighIn */,
+				AA000000000000000000001C /* WeighInTests */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
 		AA0000000000000000000014 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		AA000000000000000000001F /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -257,7 +329,27 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		AA000000000000000000001D /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				AA0000000000000000000215 /* TestSupport.swift in Sources */,
+				AA0000000000000000000216 /* AppRepositoryTests.swift in Sources */,
+				AA0000000000000000000217 /* CSVCodecTests.swift in Sources */,
+				AA0000000000000000000218 /* LogViewModelTests.swift in Sources */,
+				AA0000000000000000000219 /* ModelDefaultsTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		AA0000000000000000000024 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = AA0000000000000000000010 /* WeighIn */;
+			targetProxy = AA0000000000000000000023 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		AA0000000000000000000017 /* Debug */ = {
@@ -266,7 +358,9 @@
 				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEFINES_MODULE = YES;
 				DEVELOPMENT_TEAM = "";
+				ENABLE_TESTABILITY = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = "Weight & Reflect";
 				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Allow selecting a profile image.";
@@ -298,6 +392,7 @@
 				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEFINES_MODULE = YES;
 				DEVELOPMENT_TEAM = "";
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = "Weight & Reflect";
@@ -321,6 +416,57 @@
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Release;
+		};
+		AA0000000000000000000021 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				ENABLE_TESTING_SEARCH_PATHS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.kawadia.weighinTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/WeighIn.app/WeighIn";
+			};
+			name = Debug;
+		};
+		AA0000000000000000000022 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				ENABLE_TESTING_SEARCH_PATHS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.kawadia.weighinTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/WeighIn.app/WeighIn";
 			};
 			name = Release;
 		};
@@ -391,6 +537,15 @@
 			buildConfigurations = (
 				AA0000000000000000000019 /* Debug */,
 				AA000000000000000000001A /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		AA0000000000000000000020 /* Build configuration list for PBXNativeTarget "WeighInTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				AA0000000000000000000021 /* Debug */,
+				AA0000000000000000000022 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
