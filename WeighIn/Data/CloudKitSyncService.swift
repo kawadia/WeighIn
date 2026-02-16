@@ -87,13 +87,13 @@ actor CloudKitSyncService {
         operation.qualityOfService = .utility
 
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-            operation.modifyRecordZonesCompletionBlock = { _, _, error in
-                guard let error else {
+            operation.modifyRecordZonesResultBlock = { result in
+                switch result {
+                case .success:
                     continuation.resume()
-                    return
+                case .failure(let error):
+                    continuation.resume(throwing: error)
                 }
-
-                continuation.resume(throwing: error)
             }
 
             database.add(operation)
@@ -159,13 +159,21 @@ actor CloudKitSyncService {
         operation.qualityOfService = .utility
 
         return try await withCheckedThrowingContinuation { continuation in
-            operation.modifyRecordsCompletionBlock = { savedRecords, _, error in
-                if let error {
-                    continuation.resume(throwing: error)
-                    return
-                }
+            var savedRecordsByID: [CKRecord.ID: CKRecord] = [:]
 
-                continuation.resume(returning: savedRecords ?? [])
+            operation.perRecordSaveBlock = { recordID, result in
+                if case .success(let record) = result {
+                    savedRecordsByID[recordID] = record
+                }
+            }
+
+            operation.modifyRecordsResultBlock = { result in
+                switch result {
+                case .success:
+                    continuation.resume(returning: Array(savedRecordsByID.values))
+                case .failure(let error):
+                    continuation.resume(throwing: error)
+                }
             }
 
             database.add(operation)
@@ -254,17 +262,19 @@ actor CloudKitSyncService {
             let page = try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<([CKRecord], CKQueryOperation.Cursor?), Error>) in
                 var pageRecords: [CKRecord] = []
 
-                operation.recordFetchedBlock = { record in
-                    pageRecords.append(record)
+                operation.recordMatchedBlock = { _, result in
+                    if case .success(let record) = result {
+                        pageRecords.append(record)
+                    }
                 }
 
-                operation.queryCompletionBlock = { nextCursor, error in
-                    if let error {
+                operation.queryResultBlock = { result in
+                    switch result {
+                    case .success(let nextCursor):
+                        continuation.resume(returning: (pageRecords, nextCursor))
+                    case .failure(let error):
                         continuation.resume(throwing: error)
-                        return
                     }
-
-                    continuation.resume(returning: (pageRecords, nextCursor))
                 }
 
                 database.add(operation)
