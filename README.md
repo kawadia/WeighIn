@@ -14,18 +14,11 @@ Local-first SwiftUI app for weight tracking plus contextual notes.
 - Daily reminder scheduling (default 7:00 AM)
 
 ## Open In Xcode
-This repository contains source code in `WeighIn/`.
+The repository includes `WeighIn.xcodeproj`.
 
-1. Create a new **iOS App** project in Xcode named `WeighIn`.
-2. Replace generated Swift files with this repository's `WeighIn/` files.
-3. Ensure these frameworks are available to target:
-   - `SwiftUI`
-   - `Charts`
-   - `PhotosUI`
-   - `UserNotifications`
-   - `SQLite3` (imported in code)
-4. Add `NSPhotoLibraryUsageDescription` in Info settings.
-5. Run on iOS 17+ simulator/device.
+1. Open `WeighIn.xcodeproj` in Xcode.
+2. Select the `WeighIn` scheme.
+3. Run on iOS 17+ simulator/device.
 
 ## Data Schema (SQLite)
 - `weight_logs(id, timestamp, weight, unit, source, note_id)`
