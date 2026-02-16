@@ -33,6 +33,7 @@
 		AA0000000000000000000217 /* CSVCodecTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000117 /* CSVCodecTests.swift */; };
 		AA0000000000000000000218 /* LogViewModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000118 /* LogViewModelTests.swift */; };
 		AA0000000000000000000219 /* ModelDefaultsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000119 /* ModelDefaultsTests.swift */; };
+		AA0000000000000000000220 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000120 /* Assets.xcassets */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -74,6 +75,7 @@
 		AA0000000000000000000117 /* CSVCodecTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CSVCodecTests.swift; sourceTree = "<group>"; };
 		AA0000000000000000000118 /* LogViewModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LogViewModelTests.swift; sourceTree = "<group>"; };
 		AA0000000000000000000119 /* ModelDefaultsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelDefaultsTests.swift; sourceTree = "<group>"; };
+		AA0000000000000000000120 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Resources/Assets.xcassets; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -121,6 +123,7 @@
 				AA0000000000000000000005 /* Models */,
 				AA0000000000000000000006 /* Data */,
 				AA0000000000000000000007 /* Features */,
+				AA0000000000000000000120 /* Assets.xcassets */,
 				AA000000000000000000000B /* Utilities */,
 			);
 			path = WeighIn;
@@ -288,6 +291,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				AA0000000000000000000220 /* Assets.xcassets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -355,6 +359,7 @@
 		AA0000000000000000000017 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
@@ -363,7 +368,9 @@
 				ENABLE_TESTABILITY = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = "Weight & Reflect";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Allow voice notes to be transcribed into reflections.";
 				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Allow selecting a profile image.";
+				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Allow speech recognition for voice note transcription.";
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = UIInterfaceOrientationPortrait;
@@ -389,6 +396,7 @@
 		AA0000000000000000000018 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
@@ -396,7 +404,9 @@
 				DEVELOPMENT_TEAM = "";
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = "Weight & Reflect";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Allow voice notes to be transcribed into reflections.";
 				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Allow selecting a profile image.";
+				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Allow speech recognition for voice note transcription.";
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = UIInterfaceOrientationPortrait;

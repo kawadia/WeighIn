@@ -1,4 +1,5 @@
 import Foundation
+import CryptoKit
 
 @MainActor
 final class AppRepository: ObservableObject {
@@ -226,15 +227,31 @@ final class AppRepository: ObservableObject {
         do {
             let rows = try CSVCodec.parse(data: data)
             for row in rows {
-                let note = row.note?.trimmingCharacters(in: .whitespacesAndNewlines)
-                addWeightLog(
-                    weight: row.weight,
+                let normalizedNote = row.note?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                let key = csvRowKey(timestamp: row.timestamp, weight: row.weight, unit: row.unit)
+                let deterministicNoteID = "csv-note-\(key)"
+
+                let noteID: String?
+                if normalizedNote.isEmpty {
+                    try? store.deleteNote(id: deterministicNoteID)
+                    noteID = nil
+                } else {
+                    try store.insert(NoteEntry(id: deterministicNoteID, timestamp: row.timestamp, text: normalizedNote))
+                    noteID = deterministicNoteID
+                }
+
+                let log = WeightLog(
+                    id: "csv-log-\(key)",
                     timestamp: row.timestamp,
+                    weight: row.weight,
                     unit: row.unit,
-                    noteText: note,
-                    source: .csv
+                    source: .csv,
+                    noteID: noteID
                 )
+                try store.insert(log)
             }
+            loadAll()
+            queueSyncIfEnabled()
         } catch {
             lastErrorMessage = "CSV import failed: \(error.localizedDescription)"
         }
@@ -445,6 +462,14 @@ final class AppRepository: ObservableObject {
             return description
         }
         return error.localizedDescription
+    }
+
+    private func csvRowKey(timestamp: Date, weight: Double, unit: WeightUnit) -> String {
+        let millis = Int64((timestamp.timeIntervalSince1970 * 1000).rounded())
+        let weightString = String(format: "%.6f", weight)
+        let canonical = "\(millis)|\(weightString)|\(unit.rawValue)"
+        let digest = SHA256.hash(data: Data(canonical.utf8))
+        return digest.map { String(format: "%02x", $0) }.joined()
     }
 }
 

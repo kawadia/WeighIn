@@ -25,6 +25,9 @@ struct LogView: View {
             EditLogSheet(log: log)
                 .environmentObject(repository)
         }
+        .onDisappear {
+            model.stopVoiceRecordingIfNeeded()
+        }
         .alert("Delete entry?", isPresented: Binding(
             get: { pendingDeleteLog != nil },
             set: { newValue in
@@ -167,6 +170,30 @@ struct LogView: View {
                 Spacer()
 
                 Button {
+                    model.pasteFromClipboard()
+                } label: {
+                    Label("Paste", systemImage: "doc.on.clipboard")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(AppTheme.textPrimary)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 10)
+                        .background(AppTheme.surface)
+                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                }
+
+                Button {
+                    model.toggleVoiceRecording()
+                } label: {
+                    Label(model.isVoiceRecording ? "Stop" : "Voice", systemImage: model.isVoiceRecording ? "stop.circle.fill" : "mic.fill")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(model.isVoiceRecording ? .black : AppTheme.textPrimary)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 10)
+                        .background(model.isVoiceRecording ? Color.red.opacity(0.9) : AppTheme.surface)
+                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                }
+
+                Button {
                     model.saveNoteNow(using: repository)
                 } label: {
                     Text("Save Note")
@@ -179,6 +206,19 @@ struct LogView: View {
                 }
                 .disabled(!model.canSaveNote)
                 .opacity(model.canSaveNote ? 1 : 0.4)
+            }
+
+            if model.isVoiceRecording || !model.liveVoiceTranscript.isEmpty {
+                Text(model.liveVoiceTranscript.isEmpty ? "Listening…" : model.liveVoiceTranscript)
+                    .font(.caption)
+                    .foregroundStyle(AppTheme.textSecondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 8)
+                    .background(
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .fill(AppTheme.surface)
+                    )
             }
         }
         .frame(minHeight: height, alignment: .top)
