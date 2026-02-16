@@ -398,7 +398,7 @@ final class AppRepository: ObservableObject {
 
     func importAppleHealthZIP(from url: URL) {
         do {
-            let rows = try AppleHealthImport.parseBodyMassRows(fromZIPAt: url)
+            let rows = try AppleHealthImport.parseBodyMassRows(fromExportAt: url)
             var seenRowIDs: Set<String> = []
 
             for row in rows {
@@ -424,7 +424,7 @@ final class AppRepository: ObservableObject {
             loadAll()
             queueSyncIfEnabled()
         } catch {
-            lastErrorMessage = "Apple Health ZIP import failed: \(error.localizedDescription)"
+            lastErrorMessage = "Apple Health import failed: \(error.localizedDescription)"
         }
     }
 
@@ -763,10 +763,48 @@ private struct AppleHealthBodyMassRow {
 private enum AppleHealthImport {
     private static let supportedRecordType = "HKQuantityTypeIdentifierBodyMass"
 
-    static func parseBodyMassRows(fromZIPAt url: URL) throws -> [AppleHealthBodyMassRow] {
-        let xmlData = try ZIPExportExtractor.extractExportXML(from: url)
+    static func parseBodyMassRows(fromExportAt url: URL) throws -> [AppleHealthBodyMassRow] {
+        let xmlData = try extractExportXMLData(from: url)
         let parser = AppleHealthBodyMassXMLParser()
         return try parser.parse(data: xmlData)
+    }
+
+    private static func extractExportXMLData(from url: URL) throws -> Data {
+        let values = try? url.resourceValues(forKeys: [.isDirectoryKey])
+        if values?.isDirectory == true {
+            return try extractExportXML(fromDirectory: url)
+        }
+        return try ZIPExportExtractor.extractExportXML(from: url)
+    }
+
+    private static func extractExportXML(fromDirectory directoryURL: URL) throws -> Data {
+        let directPath = directoryURL.appendingPathComponent("export.xml")
+        if FileManager.default.fileExists(atPath: directPath.path) {
+            return try Data(contentsOf: directPath)
+        }
+
+        let nestedPath = directoryURL
+            .appendingPathComponent("apple_health_export")
+            .appendingPathComponent("export.xml")
+        if FileManager.default.fileExists(atPath: nestedPath.path) {
+            return try Data(contentsOf: nestedPath)
+        }
+
+        if let enumerator = FileManager.default.enumerator(
+            at: directoryURL,
+            includingPropertiesForKeys: [.isRegularFileKey],
+            options: [.skipsHiddenFiles]
+        ) {
+            for case let fileURL as URL in enumerator {
+                guard fileURL.lastPathComponent.lowercased() == "export.xml" else { continue }
+                let fileValues = try? fileURL.resourceValues(forKeys: [.isRegularFileKey])
+                if fileValues?.isRegularFile == true {
+                    return try Data(contentsOf: fileURL)
+                }
+            }
+        }
+
+        throw ZIPExportExtractor.ExtractorError.missingExportXML
     }
 
     private final class AppleHealthBodyMassXMLParser: NSObject, XMLParserDelegate {

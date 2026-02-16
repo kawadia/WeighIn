@@ -347,6 +347,34 @@ final class AppRepositoryTests: XCTestCase {
         let kgLog = try XCTUnwrap(repository.logs.first(where: { $0.unit == .kg }))
         XCTAssertEqual(kgLog.weight, 90.1, accuracy: 0.0001)
     }
+
+    func testAppleHealthFolderImportReadsBodyMassFromExportXML() throws {
+        let repository = try TestSupport.makeRepository()
+
+        let xml = """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <HealthData locale="en_US">
+          <Record type="HKQuantityTypeIdentifierBodyMass" sourceName="Health" unit="lb" creationDate="2024-02-02 07:00:00 -0800" startDate="2024-02-02 07:00:00 -0800" endDate="2024-02-02 07:00:00 -0800" value="198.4"/>
+          <Record type="HKQuantityTypeIdentifierBodyMass" sourceName="Scale App" unit="kg" creationDate="2024-02-03 08:30:00 +0000" startDate="2024-02-03 08:30:00 +0000" endDate="2024-02-03 08:30:00 +0000" value="89.3"/>
+        </HealthData>
+        """
+
+        let rootDirectory = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("health-folder-\(UUID().uuidString)", isDirectory: true)
+        let exportDirectory = rootDirectory.appendingPathComponent("apple_health_export", isDirectory: true)
+        let exportXMLURL = exportDirectory.appendingPathComponent("export.xml")
+
+        defer { try? FileManager.default.removeItem(at: rootDirectory) }
+        try FileManager.default.createDirectory(at: exportDirectory, withIntermediateDirectories: true)
+        try Data(xml.utf8).write(to: exportXMLURL)
+
+        repository.importAppleHealthZIP(from: rootDirectory)
+
+        XCTAssertEqual(repository.logs.count, 2)
+        XCTAssertEqual(Set(repository.logs.map(\.source)), [.health])
+        XCTAssertNotNil(repository.logs.first(where: { $0.unit == .lbs }))
+        XCTAssertNotNil(repository.logs.first(where: { $0.unit == .kg }))
+    }
 }
 
 private func makeStoredZIP(entries: [(name: String, data: Data)]) -> Data {
@@ -358,7 +386,7 @@ private func makeStoredZIP(entries: [(name: String, data: Data)]) -> Data {
         let nameData = Data(entry.name.utf8)
         let crc = entry.data.withUnsafeBytes { rawBuffer -> UInt32 in
             guard let base = rawBuffer.baseAddress?.assumingMemoryBound(to: Bytef.self) else { return 0 }
-            return crc32(0, base, uInt(rawBuffer.count))
+            return UInt32(crc32(0, base, uInt(rawBuffer.count)))
         }
         let localOffset = UInt32(archive.count)
         entryMetas.append((nameData: nameData, data: entry.data, crc: crc, offset: localOffset))

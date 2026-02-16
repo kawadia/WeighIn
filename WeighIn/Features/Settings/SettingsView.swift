@@ -27,6 +27,7 @@ struct SettingsView: View {
     @State private var showExporter = false
     @State private var showBackupFolderPicker = false
     @State private var showBackupRestoreImporter = false
+    @State private var showAppleHealthImportPicker = false
     @State private var iCloudBackupEnabled = false
 
     var body: some View {
@@ -88,11 +89,20 @@ struct SettingsView: View {
                     repository.setBackupFolder(folderURL)
                 }
             }
+            .sheet(isPresented: $showAppleHealthImportPicker) {
+                AppleHealthImportPicker { selectedURL in
+                    importData(from: selectedURL, format: .appleHealthZip)
+                }
+            }
             .confirmationDialog("Import Format", isPresented: $showImportFormatPicker, titleVisibility: .visible) {
                 ForEach(DataTransferFormat.importFormats) { format in
                     Button(format.label) {
                         selectedImportFormat = format
-                        showImporter = true
+                        if format == .appleHealthZip {
+                            showAppleHealthImportPicker = true
+                        } else {
+                            showImporter = true
+                        }
                     }
                 }
             }
@@ -437,7 +447,7 @@ private enum DataTransferFormat: String, CaseIterable, Identifiable {
         case .sqlite:
             return "SQLite"
         case .appleHealthZip:
-            return "Apple Health ZIP"
+            return "Apple Health Export"
         }
     }
 
@@ -450,7 +460,7 @@ private enum DataTransferFormat: String, CaseIterable, Identifiable {
         case .sqlite:
             return [.sqliteDatabase, .sqliteDBFile, .sqlite3DBFile]
         case .appleHealthZip:
-            return [.zip]
+            return [.zip, .folder]
         }
     }
 
@@ -542,6 +552,39 @@ private struct BackupFolderPicker: UIViewControllerRepresentable {
         func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
             guard let url = urls.first else { return }
             onFolderPicked(url)
+        }
+    }
+}
+
+private struct AppleHealthImportPicker: UIViewControllerRepresentable {
+    let onSelection: (URL) -> Void
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(onSelection: onSelection)
+    }
+
+    func makeUIViewController(context: Context) -> UIDocumentPickerViewController {
+        let controller = UIDocumentPickerViewController(
+            forOpeningContentTypes: [.zip, .folder],
+            asCopy: false
+        )
+        controller.delegate = context.coordinator
+        controller.allowsMultipleSelection = false
+        return controller
+    }
+
+    func updateUIViewController(_ uiViewController: UIDocumentPickerViewController, context: Context) {}
+
+    final class Coordinator: NSObject, UIDocumentPickerDelegate {
+        let onSelection: (URL) -> Void
+
+        init(onSelection: @escaping (URL) -> Void) {
+            self.onSelection = onSelection
+        }
+
+        func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
+            guard let url = urls.first else { return }
+            onSelection(url)
         }
     }
 }

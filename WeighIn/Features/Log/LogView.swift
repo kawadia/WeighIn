@@ -245,7 +245,7 @@ private struct EntryEditorCard<Accessory: View>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("\(weightText) \(unitLabel)")
-                .font(.system(size: 31, weight: .bold, design: .rounded))
+                .font(.system(size: 30, weight: .bold, design: .rounded))
                 .foregroundStyle(AppTheme.textPrimary)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, 10)
@@ -280,14 +280,15 @@ private struct EntryEditorCard<Accessory: View>: View {
             ) {
                 accessory()
             }
+            .padding(.top, 6)
         }
         .padding(12)
         .background(
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
                 .fill(AppTheme.surface.opacity(0.35))
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
                 .stroke(AppTheme.accentMuted.opacity(0.28), lineWidth: 1)
         )
     }
@@ -356,13 +357,13 @@ struct ReflectionNotePanel<Accessory: View>: View {
                 if noteInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     Text("How was your day? Sleep, food, exercise, stress, mood, and anything else.\nAdd a quick reflection to improve future analysis quality.")
                         .font(.subheadline)
-                        .foregroundStyle(AppTheme.textSecondary.opacity(0.55))
+                        .foregroundStyle(AppTheme.textSecondary.opacity(0.6))
                         .padding(.horizontal, 14)
                         .padding(.top, 14)
                         .allowsHitTesting(false)
                 }
             }
-            .frame(minHeight: 132)
+            .frame(minHeight: 168)
             .background(
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
                     .fill(AppTheme.surface)
@@ -439,7 +440,7 @@ private struct EditLogSheet: View {
                 }
                 .padding(.horizontal, 16)
                 .padding(.top, 12)
-                .padding(.bottom, 20)
+                .padding(.bottom, 16)
                 .onTapGesture {
                     noteEditorFocused = false
                 }
