@@ -270,52 +270,15 @@ private struct EntryEditorCard<Accessory: View>: View {
             }
             .frame(maxWidth: .infinity, alignment: .center)
 
-            ZStack(alignment: .topLeading) {
-                TextEditor(text: $noteInput)
-                    .focused(noteFocused)
-                    .padding(6)
-
-                if noteInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    Text("How was your day? Sleep, food, exercise, stress, mood, and anything else.\nAdd a quick reflection to improve future analysis quality.")
-                        .font(.subheadline)
-                        .foregroundStyle(AppTheme.textSecondary.opacity(0.55))
-                        .padding(.horizontal, 14)
-                        .padding(.top, 14)
-                        .allowsHitTesting(false)
-                }
-            }
-            .frame(minHeight: 132)
-            .background(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .fill(AppTheme.surface)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .stroke(AppTheme.accentMuted.opacity(0.5), lineWidth: 1)
-            )
-
-            accessory()
-
-            Button {
-                onSave()
-            } label: {
-                Text(saveTitle)
-                    .font(.headline)
-                    .foregroundStyle(.black)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 12)
-                    .background(AppTheme.accent)
-                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-            }
-            .disabled(!saveEnabled)
-            .opacity(saveEnabled ? 1 : 0.4)
-
-            if let statusMessage {
-                Text(statusMessage)
-                    .font(.caption)
-                    .foregroundStyle(AppTheme.textSecondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .lineLimit(1)
+            ReflectionNotePanel(
+                noteInput: $noteInput,
+                noteFocused: noteFocused,
+                saveTitle: saveTitle,
+                saveEnabled: saveEnabled,
+                statusMessage: statusMessage,
+                onSave: onSave
+            ) {
+                accessory()
             }
         }
         .padding(12)
@@ -371,6 +334,68 @@ private struct EntryEditorCard<Accessory: View>: View {
             RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .fill(AppTheme.surface)
         )
+    }
+}
+
+struct ReflectionNotePanel<Accessory: View>: View {
+    @Binding var noteInput: String
+    var noteFocused: FocusState<Bool>.Binding
+    let saveTitle: String
+    let saveEnabled: Bool
+    let statusMessage: String?
+    let onSave: () -> Void
+    @ViewBuilder let accessory: () -> Accessory
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            ZStack(alignment: .topLeading) {
+                TextEditor(text: $noteInput)
+                    .focused(noteFocused)
+                    .padding(6)
+
+                if noteInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    Text("How was your day? Sleep, food, exercise, stress, mood, and anything else.\nAdd a quick reflection to improve future analysis quality.")
+                        .font(.subheadline)
+                        .foregroundStyle(AppTheme.textSecondary.opacity(0.55))
+                        .padding(.horizontal, 14)
+                        .padding(.top, 14)
+                        .allowsHitTesting(false)
+                }
+            }
+            .frame(minHeight: 132)
+            .background(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(AppTheme.surface)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .stroke(AppTheme.accentMuted.opacity(0.5), lineWidth: 1)
+            )
+
+            accessory()
+
+            Button {
+                onSave()
+            } label: {
+                Text(saveTitle)
+                    .font(.headline)
+                    .foregroundStyle(.black)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 12)
+                    .background(AppTheme.accent)
+                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            }
+            .disabled(!saveEnabled)
+            .opacity(saveEnabled ? 1 : 0.4)
+
+            if let statusMessage {
+                Text(statusMessage)
+                    .font(.caption)
+                    .foregroundStyle(AppTheme.textSecondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .lineLimit(2)
+            }
+        }
     }
 }
 
