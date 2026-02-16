@@ -9,10 +9,11 @@ struct LogView: View {
     var body: some View {
         GeometryReader { geometry in
             ScrollView {
-                VStack(spacing: 14) {
+                VStack(spacing: 12) {
                     titleBar
-                    weightEntrySection(height: max(290, geometry.size.height * 0.46))
-                    notesSection(height: max(290, geometry.size.height * 0.46))
+                    weightEntrySection(height: max(258, geometry.size.height * 0.4))
+                    notesSection(height: max(290, geometry.size.height * 0.44))
+                        .padding(.top, 8)
                     recentLogsSection
                 }
                 .padding(.horizontal, 16)
@@ -50,61 +51,32 @@ struct LogView: View {
     }
 
     private var titleBar: some View {
-        HStack {
+        HStack(spacing: 10) {
+            Image("BrandMark")
+                .resizable()
+                .scaledToFit()
+                .frame(width: 34, height: 34)
+
             Text("Weigh & Reflect")
-                .font(.system(size: 28, weight: .bold, design: .rounded))
-                .foregroundStyle(AppTheme.textPrimary)
-            Spacer()
+                .font(.system(size: 34, weight: .heavy, design: .rounded))
+                .foregroundStyle(
+                    LinearGradient(
+                        colors: [Color(red: 138 / 255, green: 246 / 255, blue: 171 / 255), AppTheme.accent],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    )
+                )
+                .shadow(color: AppTheme.accent.opacity(0.2), radius: 8, x: 0, y: 2)
         }
+        .frame(maxWidth: .infinity, alignment: .center)
+        .padding(.bottom, 4)
     }
 
     private func weightEntrySection(height: CGFloat) -> some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 8) {
-                HStack(spacing: 6) {
-                    Image(systemName: "calendar")
-                        .foregroundStyle(AppTheme.textSecondary)
-                    DatePicker(
-                        "",
-                        selection: $model.entryTimestamp,
-                        displayedComponents: .date
-                    )
-                    .labelsHidden()
-                    .datePickerStyle(.compact)
-                    .tint(AppTheme.textPrimary)
-                }
-                .padding(.horizontal, 10)
-                .padding(.vertical, 6)
-                .background(
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .fill(AppTheme.surface)
-                )
-
-                HStack(spacing: 6) {
-                    Image(systemName: "clock")
-                        .foregroundStyle(AppTheme.textSecondary)
-                    DatePicker(
-                        "",
-                        selection: $model.entryTimestamp,
-                        displayedComponents: .hourAndMinute
-                    )
-                    .labelsHidden()
-                    .datePickerStyle(.compact)
-                    .tint(AppTheme.textPrimary)
-                }
-                .padding(.horizontal, 10)
-                .padding(.vertical, 6)
-                .background(
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .fill(AppTheme.surface)
-                )
-
-                Spacer()
-            }
-
             HStack(spacing: 12) {
                 Text(weightDisplay)
-                    .font(.system(size: 48, weight: .bold, design: .rounded))
+                    .font(.system(size: 46, weight: .bold, design: .rounded))
                     .foregroundStyle(AppTheme.textPrimary)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, 14)
@@ -136,17 +108,28 @@ struct LogView: View {
                 RoundedRectangle(cornerRadius: 18, style: .continuous)
                     .fill(Color.black.opacity(0.25))
             )
+
+            HStack(spacing: 8) {
+                dateSelectorChip
+                timeSelectorChip
+            }
+            .padding(.top, 4)
+            .frame(maxWidth: .infinity, alignment: .center)
         }
         .frame(minHeight: height, alignment: .top)
+        .padding(14)
+        .background(sectionCardBackground)
+        .overlay(sectionCardBorder)
     }
 
     private func notesSection(height: CGFloat) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Reflections & Notes")
-                .font(.headline)
+                .font(.system(size: 24, weight: .bold, design: .rounded))
                 .foregroundStyle(AppTheme.textPrimary)
+                .frame(maxWidth: .infinity, alignment: .center)
 
-            Text("How was yesterday? Sleep, food, exercise, stress, mood, andy anything else.")
+            Text("How was yesterday? Sleep, food, exercise, stress, mood, and anything else.")
                 .font(.subheadline)
                 .foregroundStyle(AppTheme.textSecondary)
 
@@ -222,6 +205,9 @@ struct LogView: View {
             }
         }
         .frame(minHeight: height, alignment: .top)
+        .padding(14)
+        .background(sectionCardBackground)
+        .overlay(sectionCardBorder)
     }
 
     private var recentLogsSection: some View {
@@ -297,16 +283,73 @@ struct LogView: View {
                     .padding(12)
                     .background(
                         RoundedRectangle(cornerRadius: 12, style: .continuous)
-                            .fill(AppTheme.surface)
+                            .fill(AppTheme.background.opacity(0.35))
                     )
                 }
             }
         }
+        .padding(14)
+        .background(sectionCardBackground)
+        .overlay(sectionCardBorder)
     }
 
     private var weightDisplay: String {
         let value = model.weightInput.isEmpty ? "--" : model.weightInput
         return "\(value) \(repository.settings.defaultUnit.label)"
+    }
+
+    private var dateSelectorChip: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "calendar")
+                .foregroundStyle(AppTheme.textSecondary)
+
+            DatePicker(
+                "",
+                selection: $model.entryTimestamp,
+                displayedComponents: .date
+            )
+            .labelsHidden()
+            .datePickerStyle(.compact)
+            .tint(AppTheme.textPrimary)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(AppTheme.surface)
+        )
+    }
+
+    private var timeSelectorChip: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "clock")
+                .foregroundStyle(AppTheme.textSecondary)
+
+            DatePicker(
+                "",
+                selection: $model.entryTimestamp,
+                displayedComponents: .hourAndMinute
+            )
+            .labelsHidden()
+            .datePickerStyle(.compact)
+            .tint(AppTheme.textPrimary)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(AppTheme.surface)
+        )
+    }
+
+    private var sectionCardBackground: some View {
+        RoundedRectangle(cornerRadius: 20, style: .continuous)
+            .fill(AppTheme.surface.opacity(0.35))
+    }
+
+    private var sectionCardBorder: some View {
+        RoundedRectangle(cornerRadius: 20, style: .continuous)
+            .stroke(AppTheme.accentMuted.opacity(0.28), lineWidth: 1)
     }
 }
 
