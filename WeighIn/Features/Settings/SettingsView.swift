@@ -10,8 +10,7 @@ struct SettingsView: View {
     @State private var reminderEnabled = true
     @State private var reminderTime = Calendar.current.date(from: DateComponents(hour: 7, minute: 0)) ?? Date()
 
-    @State private var includeBirthday = false
-    @State private var birthday = Date()
+    @State private var birthday: Date?
     @State private var gender: Gender = .undisclosed
     @State private var heightFeet = ""
     @State private var heightInches = ""
@@ -35,6 +34,12 @@ struct SettingsView: View {
             .background(AppTheme.background)
             .navigationTitle("Settings")
             .onAppear(perform: loadState)
+            .onChange(of: defaultUnit) { _, _ in savePreferences() }
+            .onChange(of: reminderEnabled) { _, _ in savePreferences() }
+            .onChange(of: reminderTime) { _, _ in savePreferences() }
+            .onChange(of: gender) { _, _ in saveProfile() }
+            .onChange(of: heightFeet) { _, _ in saveProfile() }
+            .onChange(of: heightInches) { _, _ in saveProfile() }
             .onChange(of: selectedPhoto) { _, newValue in
                 guard let newValue else { return }
                 Task {
@@ -88,10 +93,28 @@ struct SettingsView: View {
                 .buttonStyle(.bordered)
             }
 
-            Toggle("Include birthday", isOn: $includeBirthday)
+            if birthday != nil {
+                DatePicker(
+                    "Birthday",
+                    selection: Binding(
+                        get: { birthday ?? Date() },
+                        set: { value in
+                            birthday = value
+                            saveProfile()
+                        }
+                    ),
+                    displayedComponents: .date
+                )
 
-            if includeBirthday {
-                DatePicker("Birthday", selection: $birthday, displayedComponents: .date)
+                Button("Remove Birthday", role: .destructive) {
+                    birthday = nil
+                    saveProfile()
+                }
+            } else {
+                Button("Set Birthday") {
+                    birthday = Date()
+                    saveProfile()
+                }
             }
 
             Picker("Gender", selection: $gender) {
@@ -108,11 +131,6 @@ struct SettingsView: View {
                     .keyboardType(.numberPad)
                 Text("in")
             }
-
-            Button("Save Profile") {
-                saveProfile()
-            }
-            .foregroundStyle(AppTheme.accent)
         }
     }
 
@@ -128,11 +146,6 @@ struct SettingsView: View {
             if reminderEnabled {
                 DatePicker("Reminder Time", selection: $reminderTime, displayedComponents: .hourAndMinute)
             }
-
-            Button("Save Preferences") {
-                savePreferences()
-            }
-            .foregroundStyle(AppTheme.accent)
         }
     }
 
@@ -183,8 +196,7 @@ struct SettingsView: View {
             minute: repository.settings.reminderMinute
         )) ?? Date()
 
-        includeBirthday = repository.profile.birthday != nil
-        birthday = repository.profile.birthday ?? Date()
+        birthday = repository.profile.birthday
         gender = repository.profile.gender
         avatarPath = repository.profile.avatarPath
 
@@ -205,15 +217,16 @@ struct SettingsView: View {
         let hour = parts.hour ?? 7
         let minute = parts.minute ?? 0
 
-        repository.updateSettings(
-            AppSettings(
-                defaultUnit: defaultUnit,
-                reminderEnabled: reminderEnabled,
-                reminderHour: hour,
-                reminderMinute: minute,
-                hasCompletedOnboarding: repository.settings.hasCompletedOnboarding
-            )
+        let updated = AppSettings(
+            defaultUnit: defaultUnit,
+            reminderEnabled: reminderEnabled,
+            reminderHour: hour,
+            reminderMinute: minute,
+            hasCompletedOnboarding: repository.settings.hasCompletedOnboarding
         )
+
+        guard updated != repository.settings else { return }
+        repository.updateSettings(updated)
     }
 
     private func saveProfile() {
@@ -227,12 +240,13 @@ struct SettingsView: View {
         }
 
         let updated = UserProfile(
-            birthday: includeBirthday ? birthday : nil,
+            birthday: birthday,
             gender: gender,
             heightCentimeters: heightCentimeters,
             avatarPath: avatarPath
         )
 
+        guard updated != repository.profile else { return }
         repository.updateProfile(updated)
     }
 

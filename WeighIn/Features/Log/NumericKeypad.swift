@@ -19,9 +19,9 @@ struct NumericKeypad: View {
                             onTap(key)
                         } label: {
                             Text(key)
-                                .font(.system(size: 28, weight: .semibold, design: .rounded))
+                                .font(.system(size: 24, weight: .semibold, design: .rounded))
                                 .foregroundStyle(AppTheme.textPrimary)
-                                .frame(maxWidth: .infinity, minHeight: 74)
+                                .frame(maxWidth: .infinity, minHeight: 62)
                                 .background(key == "⌫" ? AppTheme.accentMuted : AppTheme.surface)
                                 .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                         }
