@@ -10,18 +10,27 @@ final class AppRepository: ObservableObject {
     @Published private(set) var syncInProgress = false
 
     private let store: SQLiteStore
-    private let syncService: CloudKitSyncService
+    private let syncService: CloudKitSyncService?
+    private let cloudKitSyncFeatureEnabled: Bool
     private var shouldRunSyncAgain = false
     private var forceNextSync = false
 
     init(
         store: SQLiteStore = try! SQLiteStore(),
-        syncService: CloudKitSyncService = CloudKitSyncService()
+        syncService: CloudKitSyncService? = nil,
+        cloudKitSyncFeatureEnabled: Bool = false
     ) {
         self.store = store
-        self.syncService = syncService
+        self.cloudKitSyncFeatureEnabled = cloudKitSyncFeatureEnabled
+        if cloudKitSyncFeatureEnabled {
+            self.syncService = syncService ?? CloudKitSyncService()
+        } else {
+            self.syncService = nil
+        }
         loadAll()
-        queueSyncIfEnabled()
+        if cloudKitSyncFeatureEnabled {
+            queueSyncIfEnabled()
+        }
     }
 
     func loadAll() {
@@ -29,6 +38,10 @@ final class AppRepository: ObservableObject {
             logs = try store.fetchWeightLogs()
             notes = try store.fetchNotes()
             settings = try store.fetchSettings()
+            if !cloudKitSyncFeatureEnabled && settings.iCloudSyncEnabled {
+                settings.iCloudSyncEnabled = false
+                try store.upsert(settings: settings)
+            }
             profile = try store.fetchProfile()
             NotificationScheduler.updateDailyReminder(
                 enabled: settings.reminderEnabled,
@@ -164,13 +177,18 @@ final class AppRepository: ObservableObject {
     }
 
     func updateSettings(_ updated: AppSettings) {
+        var persisted = updated
+        if !cloudKitSyncFeatureEnabled {
+            persisted.iCloudSyncEnabled = false
+        }
+
         do {
-            try store.upsert(settings: updated)
-            settings = updated
+            try store.upsert(settings: persisted)
+            settings = persisted
             NotificationScheduler.updateDailyReminder(
-                enabled: updated.reminderEnabled,
-                hour: updated.reminderHour,
-                minute: updated.reminderMinute
+                enabled: persisted.reminderEnabled,
+                hour: persisted.reminderHour,
+                minute: persisted.reminderMinute
             )
             queueSyncIfEnabled()
         } catch {
@@ -194,6 +212,10 @@ final class AppRepository: ObservableObject {
     }
 
     func triggerSyncNow() {
+        guard cloudKitSyncFeatureEnabled else {
+            lastErrorMessage = "iCloud sync is disabled in this build."
+            return
+        }
         queueSyncIfEnabled(force: true)
     }
 
@@ -291,6 +313,7 @@ final class AppRepository: ObservableObject {
     }
 
     private func queueSyncIfEnabled(force: Bool = false) {
+        guard cloudKitSyncFeatureEnabled else { return }
         guard settings.iCloudSyncEnabled else { return }
 
         if syncInProgress {
@@ -310,6 +333,8 @@ final class AppRepository: ObservableObject {
 
     private func runSyncLoop() async {
         defer { syncInProgress = false }
+
+        guard let syncService else { return }
 
         var firstPass = true
         while settings.iCloudSyncEnabled {

@@ -5,6 +5,7 @@ import UIKit
 
 struct SettingsView: View {
     @EnvironmentObject private var repository: AppRepository
+    private let cloudSyncAvailable = false
 
     @State private var defaultUnit: WeightUnit = .lbs
     @State private var reminderEnabled = true
@@ -171,10 +172,17 @@ struct SettingsView: View {
     private var syncSection: some View {
         Section("iCloud Sync") {
             Toggle("Enable iCloud Sync", isOn: $iCloudSyncEnabled)
+                .disabled(!cloudSyncAvailable)
 
             Text("Syncs your logs, notes, and profile across your devices using your private iCloud account.")
                 .font(.caption)
                 .foregroundStyle(AppTheme.textSecondary)
+
+            if !cloudSyncAvailable {
+                Text("Cloud sync is currently inactive in this build. Your data stays local on this device.")
+                    .font(.caption)
+                    .foregroundStyle(AppTheme.textSecondary)
+            }
 
             if repository.syncInProgress {
                 Label("Syncing…", systemImage: "arrow.triangle.2.circlepath")
@@ -201,7 +209,7 @@ struct SettingsView: View {
             Button("Sync Now") {
                 repository.triggerSyncNow()
             }
-            .disabled(!iCloudSyncEnabled || repository.syncInProgress)
+            .disabled(!cloudSyncAvailable || !iCloudSyncEnabled || repository.syncInProgress)
 
             Text("Requires an iCloud account signed into this device.")
                 .font(.caption2)
@@ -264,7 +272,7 @@ struct SettingsView: View {
             reminderHour: hour,
             reminderMinute: minute,
             hasCompletedOnboarding: repository.settings.hasCompletedOnboarding,
-            iCloudSyncEnabled: iCloudSyncEnabled,
+            iCloudSyncEnabled: cloudSyncAvailable ? iCloudSyncEnabled : false,
             lastSyncAt: repository.settings.lastSyncAt,
             lastSyncError: repository.settings.lastSyncError
         )
