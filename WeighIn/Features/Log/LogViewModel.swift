@@ -1,7 +1,6 @@
 import Foundation
 import AVFoundation
 import Speech
-import UIKit
 
 @MainActor
 final class LogViewModel: ObservableObject {
@@ -14,6 +13,8 @@ final class LogViewModel: ObservableObject {
 
     private var lastSavedNoteID: String?
     private var lastSavedNormalizedNoteText = ""
+    private var isVoicePressActive = false
+    private var isVoiceStartInFlight = false
     private let audioEngine = AVAudioEngine()
     private let speechRecognizer = SFSpeechRecognizer(locale: Locale.current)
     private var recognitionRequest: SFSpeechAudioBufferRecognitionRequest?
@@ -82,46 +83,49 @@ final class LogViewModel: ObservableObject {
         }
     }
 
-    func pasteFromClipboard() {
-        let clipped = UIPasteboard.general.string?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        guard !clipped.isEmpty else {
-            lastSaveMessage = "Clipboard is empty"
-            return
-        }
+    func beginVoiceCapturePress() {
+        isVoicePressActive = true
+        guard !isVoiceRecording, !isVoiceStartInFlight else { return }
 
-        appendToNote(clipped)
-        lastSaveMessage = "Pasted from clipboard"
-    }
-
-    func toggleVoiceRecording() {
-        if isVoiceRecording {
-            stopVoiceRecording(appendTranscript: true)
-            return
-        }
-
+        isVoiceStartInFlight = true
         Task {
             await startVoiceRecording()
         }
     }
 
+    func endVoiceCapturePress() {
+        isVoicePressActive = false
+        guard isVoiceRecording else { return }
+        stopVoiceRecording(appendTranscript: true)
+    }
+
     func stopVoiceRecordingIfNeeded() {
+        isVoicePressActive = false
         guard isVoiceRecording else { return }
         stopVoiceRecording(appendTranscript: false)
     }
 
     private func startVoiceRecording() async {
+        defer {
+            isVoiceStartInFlight = false
+        }
+
+        guard isVoicePressActive else { return }
+
         guard let speechRecognizer, speechRecognizer.isAvailable else {
             lastSaveMessage = "Voice transcription unavailable right now"
             return
         }
 
         let speechAuthorized = await requestSpeechAuthorization() == .authorized
+        guard isVoicePressActive else { return }
         guard speechAuthorized else {
             lastSaveMessage = "Allow Speech Recognition in Settings to use voice notes"
             return
         }
 
         let micAuthorized = await requestMicrophonePermission()
+        guard isVoicePressActive else { return }
         guard micAuthorized else {
             lastSaveMessage = "Allow Microphone access in Settings to use voice notes"
             return
@@ -132,7 +136,7 @@ final class LogViewModel: ObservableObject {
             try startRecognition(with: speechRecognizer)
             isVoiceRecording = true
             liveVoiceTranscript = ""
-            lastSaveMessage = "Listening… tap again to stop"
+            lastSaveMessage = "Listening… release to stop"
         } catch {
             stopVoiceRecording(appendTranscript: false)
             lastSaveMessage = "Could not start voice note: \(error.localizedDescription)"
@@ -140,6 +144,8 @@ final class LogViewModel: ObservableObject {
     }
 
     private func stopVoiceRecording(appendTranscript: Bool) {
+        isVoicePressActive = false
+
         if audioEngine.isRunning {
             audioEngine.stop()
         }
@@ -198,10 +204,6 @@ final class LogViewModel: ObservableObject {
                     self.stopVoiceRecording(appendTranscript: false)
                     self.lastSaveMessage = "Voice note stopped: \(error.localizedDescription)"
                     return
-                }
-
-                if result?.isFinal == true {
-                    self.stopVoiceRecording(appendTranscript: true)
                 }
             }
         }

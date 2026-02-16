@@ -163,35 +163,29 @@ struct LogView: View {
                 )
 
             HStack(alignment: .center) {
-                Text(model.lastSaveMessage)
-                    .font(.caption)
-                    .foregroundStyle(AppTheme.textSecondary)
-
                 Spacer()
 
-                Button {
-                    model.pasteFromClipboard()
-                } label: {
-                    Label("Paste", systemImage: "doc.on.clipboard")
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(AppTheme.textPrimary)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 10)
-                        .background(AppTheme.surface)
-                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                }
-
-                Button {
-                    model.toggleVoiceRecording()
-                } label: {
-                    Label(model.isVoiceRecording ? "Stop" : "Voice", systemImage: model.isVoiceRecording ? "stop.circle.fill" : "mic.fill")
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(model.isVoiceRecording ? .black : AppTheme.textPrimary)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 10)
-                        .background(model.isVoiceRecording ? Color.red.opacity(0.9) : AppTheme.surface)
-                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                }
+                Label(
+                    model.isVoiceRecording ? "Listening…" : "Hold to Talk",
+                    systemImage: model.isVoiceRecording ? "waveform" : "mic.fill"
+                )
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(model.isVoiceRecording ? .black : AppTheme.textPrimary)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 10)
+                .background(model.isVoiceRecording ? Color.red.opacity(0.9) : AppTheme.surface)
+                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .gesture(
+                    DragGesture(minimumDistance: 0)
+                        .onChanged { _ in
+                            model.beginVoiceCapturePress()
+                        }
+                        .onEnded { _ in
+                            model.endVoiceCapturePress()
+                        }
+                )
+                .accessibilityLabel("Hold to talk")
 
                 Button {
                     model.saveNoteNow(using: repository)
@@ -207,6 +201,12 @@ struct LogView: View {
                 .disabled(!model.canSaveNote)
                 .opacity(model.canSaveNote ? 1 : 0.4)
             }
+
+            Text(model.lastSaveMessage.isEmpty ? " " : model.lastSaveMessage)
+                .font(.caption)
+                .foregroundStyle(AppTheme.textSecondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .lineLimit(1)
 
             if model.isVoiceRecording || !model.liveVoiceTranscript.isEmpty {
                 Text(model.liveVoiceTranscript.isEmpty ? "Listening…" : model.liveVoiceTranscript)
