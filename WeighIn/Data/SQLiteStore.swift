@@ -14,10 +14,12 @@ final class SQLiteStore {
         case error
     }
 
+    private let databaseURL: URL
     private let db: OpaquePointer
     private let transient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
 
     init(databaseURL: URL = SQLiteStore.defaultDatabaseURL()) throws {
+        self.databaseURL = databaseURL
         let fileManager = FileManager.default
         let directory = databaseURL.deletingLastPathComponent()
         try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -47,6 +49,54 @@ final class SQLiteStore {
             ?? URL(fileURLWithPath: NSTemporaryDirectory())
         return root.appendingPathComponent("WeighIn", isDirectory: true)
             .appendingPathComponent("weighin.sqlite")
+    }
+
+    func exportDatabaseData() throws -> Data {
+        let temporaryURL = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("weighin-export-\(UUID().uuidString).sqlite")
+
+        defer {
+            try? FileManager.default.removeItem(at: temporaryURL)
+        }
+
+        var destinationDB: OpaquePointer?
+        guard sqlite3_open(temporaryURL.path, &destinationDB) == SQLITE_OK else {
+            let message = destinationDB.flatMap { String(cString: sqlite3_errmsg($0)) } ?? "Unknown error"
+            sqlite3_close(destinationDB)
+            throw StoreError.openFailed(message)
+        }
+
+        guard let destinationDB else {
+            throw StoreError.openFailed("Unable to allocate export database pointer")
+        }
+
+        defer {
+            sqlite3_close(destinationDB)
+        }
+
+        try backup(from: db, to: destinationDB)
+        return try Data(contentsOf: temporaryURL)
+    }
+
+    func importDatabase(from sourceURL: URL) throws {
+        var sourceDB: OpaquePointer?
+        guard sqlite3_open_v2(sourceURL.path, &sourceDB, SQLITE_OPEN_READONLY, nil) == SQLITE_OK else {
+            let message = sourceDB.flatMap { String(cString: sqlite3_errmsg($0)) } ?? "Unknown error"
+            sqlite3_close(sourceDB)
+            throw StoreError.openFailed(message)
+        }
+
+        guard let sourceDB else {
+            throw StoreError.openFailed("Unable to allocate import database pointer")
+        }
+
+        defer {
+            sqlite3_close(sourceDB)
+        }
+
+        try backup(from: sourceDB, to: db)
+        try execute("PRAGMA foreign_keys = ON;")
+        try migrate()
     }
 
     func fetchWeightLogs() throws -> [WeightLog] {
@@ -874,6 +924,21 @@ final class SQLiteStore {
     private func optionalString(from statement: OpaquePointer, index: Int32) -> String? {
         guard sqlite3_column_type(statement, index) != SQLITE_NULL else { return nil }
         return string(from: statement, index: index)
+    }
+
+    private func backup(from source: OpaquePointer, to destination: OpaquePointer) throws {
+        guard let backupHandle = sqlite3_backup_init(destination, "main", source, "main") else {
+            throw StoreError.executionFailed(String(cString: sqlite3_errmsg(destination)))
+        }
+
+        defer {
+            sqlite3_backup_finish(backupHandle)
+        }
+
+        let stepResult = sqlite3_backup_step(backupHandle, -1)
+        guard stepResult == SQLITE_DONE else {
+            throw StoreError.executionFailed(String(cString: sqlite3_errmsg(destination)))
+        }
     }
 }
 

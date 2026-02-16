@@ -21,9 +21,12 @@ struct SettingsView: View {
     @State private var avatarImage: Image?
     @State private var selectedPhoto: PhotosPickerItem?
 
+    @State private var selectedImportFormat: DataTransferFormat = .csv
+    @State private var selectedExportFormat: DataTransferFormat = .csv
+    @State private var showImportFormatPicker = false
+    @State private var showExportFormatPicker = false
     @State private var showImporter = false
     @State private var showExporter = false
-    @State private var showJSONExporter = false
 
     var body: some View {
         NavigationStack {
@@ -52,35 +55,36 @@ struct SettingsView: View {
             }
             .fileImporter(
                 isPresented: $showImporter,
-                allowedContentTypes: [.commaSeparatedText, .text],
+                allowedContentTypes: selectedImportFormat.allowedImportTypes,
                 allowsMultipleSelection: false
             ) { result in
                 guard case let .success(urls) = result, let url = urls.first else { return }
-                do {
-                    let data = try Data(contentsOf: url)
-                    repository.importCSV(from: data)
-                } catch {
-                    repository.lastErrorMessage = "Unable to read CSV: \(error.localizedDescription)"
-                }
+                importData(from: url, format: selectedImportFormat)
             }
             .fileExporter(
                 isPresented: $showExporter,
-                document: CSVExportDocument(data: repository.exportCSV()),
-                contentType: .commaSeparatedText,
-                defaultFilename: "weighin-export"
+                document: BinaryExportDocument(data: exportData(for: selectedExportFormat)),
+                contentType: selectedExportFormat.exportContentType,
+                defaultFilename: selectedExportFormat.defaultExportFilename
             ) { result in
                 if case let .failure(error) = result {
-                    repository.lastErrorMessage = "Unable to export CSV: \(error.localizedDescription)"
+                    repository.lastErrorMessage = "Unable to export \(selectedExportFormat.label): \(error.localizedDescription)"
                 }
             }
-            .fileExporter(
-                isPresented: $showJSONExporter,
-                document: JSONExportDocument(data: repository.exportJSON()),
-                contentType: .json,
-                defaultFilename: "weighin-export"
-            ) { result in
-                if case let .failure(error) = result {
-                    repository.lastErrorMessage = "Unable to export JSON: \(error.localizedDescription)"
+            .confirmationDialog("Import Format", isPresented: $showImportFormatPicker, titleVisibility: .visible) {
+                ForEach(DataTransferFormat.allCases) { format in
+                    Button(format.label) {
+                        selectedImportFormat = format
+                        showImporter = true
+                    }
+                }
+            }
+            .confirmationDialog("Export Format", isPresented: $showExportFormatPicker, titleVisibility: .visible) {
+                ForEach(DataTransferFormat.allCases) { format in
+                    Button(format.label) {
+                        selectedExportFormat = format
+                        showExporter = true
+                    }
                 }
             }
         }
@@ -155,16 +159,12 @@ struct SettingsView: View {
 
     private var dataSection: some View {
         Section("Data") {
-            Button("Import CSV") {
-                showImporter = true
+            Button("Import") {
+                showImportFormatPicker = true
             }
 
-            Button("Export CSV") {
-                showExporter = true
-            }
-
-            Button("Export JSON") {
-                showJSONExporter = true
+            Button("Export") {
+                showExportFormatPicker = true
             }
         }
     }
@@ -338,28 +338,111 @@ struct SettingsView: View {
 
         avatarImage = Image(uiImage: image)
     }
+
+    private func exportData(for format: DataTransferFormat) -> Data {
+        switch format {
+        case .csv:
+            return repository.exportCSV()
+        case .json:
+            return repository.exportJSON()
+        case .sqlite:
+            return repository.exportSQLite()
+        }
+    }
+
+    private func importData(from url: URL, format: DataTransferFormat) {
+        let hasAccess = url.startAccessingSecurityScopedResource()
+        defer {
+            if hasAccess {
+                url.stopAccessingSecurityScopedResource()
+            }
+        }
+
+        do {
+            switch format {
+            case .csv:
+                let data = try Data(contentsOf: url)
+                repository.importCSV(from: data)
+            case .json:
+                let data = try Data(contentsOf: url)
+                repository.importJSON(from: data)
+            case .sqlite:
+                repository.importSQLite(from: url)
+            }
+        } catch {
+            repository.lastErrorMessage = "Unable to read \(format.label): \(error.localizedDescription)"
+        }
+    }
 }
 
-private struct CSVExportDocument: FileDocument {
-    static var readableContentTypes: [UTType] { [.commaSeparatedText, .text] }
+private enum DataTransferFormat: String, CaseIterable, Identifiable {
+    case csv
+    case json
+    case sqlite
 
-    let data: Data
+    var id: String { rawValue }
 
-    init(data: Data) {
-        self.data = data
+    var label: String {
+        switch self {
+        case .csv:
+            return "CSV"
+        case .json:
+            return "JSON"
+        case .sqlite:
+            return "SQLite"
+        }
     }
 
-    init(configuration: ReadConfiguration) throws {
-        data = configuration.file.regularFileContents ?? Data()
+    var allowedImportTypes: [UTType] {
+        switch self {
+        case .csv:
+            return [.commaSeparatedText, .text]
+        case .json:
+            return [.json]
+        case .sqlite:
+            return [.sqliteDatabase, .sqliteDBFile, .sqlite3DBFile]
+        }
     }
 
-    func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
-        FileWrapper(regularFileWithContents: data)
+    var exportContentType: UTType {
+        switch self {
+        case .csv:
+            return .commaSeparatedText
+        case .json:
+            return .json
+        case .sqlite:
+            return .sqliteDatabase
+        }
+    }
+
+    var defaultExportFilename: String {
+        switch self {
+        case .csv:
+            return "weighin-export"
+        case .json:
+            return "weighin-export"
+        case .sqlite:
+            return "weighin-backup"
+        }
     }
 }
 
-private struct JSONExportDocument: FileDocument {
-    static var readableContentTypes: [UTType] { [.json] }
+private extension UTType {
+    static var sqliteDatabase: UTType {
+        UTType(filenameExtension: "sqlite") ?? .data
+    }
+
+    static var sqliteDBFile: UTType {
+        UTType(filenameExtension: "db") ?? .data
+    }
+
+    static var sqlite3DBFile: UTType {
+        UTType(filenameExtension: "sqlite3") ?? .data
+    }
+}
+
+private struct BinaryExportDocument: FileDocument {
+    static var readableContentTypes: [UTType] { [.data, .commaSeparatedText, .json, .sqliteDatabase] }
 
     let data: Data
 

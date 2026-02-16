@@ -237,6 +237,50 @@ final class AppRepository: ObservableObject {
         }
     }
 
+    func importJSON(from data: Data) {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+
+        do {
+            let payload = try decoder.decode(ExportPayload.self, from: data)
+            for note in payload.notes {
+                try store.insert(note)
+            }
+
+            for log in payload.logs {
+                try store.insert(log)
+            }
+
+            let importedSettings = AppSettings(
+                defaultUnit: payload.settings.defaultUnit,
+                reminderEnabled: payload.settings.reminderEnabled,
+                reminderHour: payload.settings.reminderHour,
+                reminderMinute: payload.settings.reminderMinute,
+                hasCompletedOnboarding: payload.settings.hasCompletedOnboarding,
+                iCloudSyncEnabled: cloudKitSyncFeatureEnabled ? payload.settings.iCloudSyncEnabled : false,
+                lastSyncAt: settings.lastSyncAt,
+                lastSyncError: settings.lastSyncError
+            )
+            try store.upsert(settings: importedSettings)
+            try store.upsert(profile: payload.profile)
+
+            loadAll()
+            queueSyncIfEnabled()
+        } catch {
+            lastErrorMessage = "JSON import failed: \(error.localizedDescription)"
+        }
+    }
+
+    func importSQLite(from url: URL) {
+        do {
+            try store.importDatabase(from: url)
+            loadAll()
+            queueSyncIfEnabled()
+        } catch {
+            lastErrorMessage = "SQLite import failed: \(error.localizedDescription)"
+        }
+    }
+
     func exportCSV() -> Data {
         let noteMap = Dictionary(uniqueKeysWithValues: notes.map { ($0.id, $0) })
         return CSVCodec.export(logs: logs, notesByID: noteMap)
@@ -259,6 +303,15 @@ final class AppRepository: ObservableObject {
             return try encoder.encode(payload)
         } catch {
             lastErrorMessage = "Could not export JSON: \(error.localizedDescription)"
+            return Data()
+        }
+    }
+
+    func exportSQLite() -> Data {
+        do {
+            return try store.exportDatabaseData()
+        } catch {
+            lastErrorMessage = "Could not export SQLite: \(error.localizedDescription)"
             return Data()
         }
     }
