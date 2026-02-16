@@ -97,18 +97,6 @@ struct LogView: View {
                 )
 
                 Spacer()
-
-                Button("Now") {
-                    model.entryTimestamp = Date()
-                }
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(AppTheme.accent)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 6)
-                .background(
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .fill(AppTheme.accentMuted.opacity(0.2))
-                )
             }
 
             HStack(spacing: 12) {
@@ -151,20 +139,9 @@ struct LogView: View {
 
     private func notesSection(height: CGFloat) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Text("Notes")
-                    .font(.headline)
-                    .foregroundStyle(AppTheme.textPrimary)
-
-                Spacer()
-
-                Toggle("Autosave", isOn: $model.autosaveNotes)
-                    .labelsHidden()
-                    .tint(AppTheme.accent)
-                Text("Autosave")
-                    .font(.caption)
-                    .foregroundStyle(AppTheme.textSecondary)
-            }
+            Text("Notes")
+                .font(.headline)
+                .foregroundStyle(AppTheme.textPrimary)
 
             Text("How was yesterday? Sleep, food, exercise, stress, mood.")
                 .font(.subheadline)
@@ -182,28 +159,29 @@ struct LogView: View {
                         .stroke(AppTheme.accentMuted.opacity(0.5), lineWidth: 1)
                 )
 
-            HStack {
-                Text(model.lastAutosaveMessage)
+            HStack(alignment: .center) {
+                Text(model.lastSaveMessage)
                     .font(.caption)
                     .foregroundStyle(AppTheme.textSecondary)
 
                 Spacer()
 
-                Button("Save Note") {
+                Button {
                     model.saveNoteNow(using: repository)
+                } label: {
+                    Text("Save Note")
+                        .font(.headline)
+                        .foregroundStyle(.black)
+                        .padding(.horizontal, 22)
+                        .padding(.vertical, 10)
+                        .background(AppTheme.accent)
+                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                 }
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(AppTheme.accent)
                 .disabled(model.noteInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                .opacity(model.noteInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? 0.4 : 1)
             }
         }
         .frame(minHeight: height, alignment: .top)
-        .onChange(of: model.noteInput) { _, _ in
-            model.noteChanged(using: repository)
-        }
-        .onChange(of: model.autosaveNotes) { _, _ in
-            model.autosaveSettingChanged(using: repository)
-        }
     }
 
     private var recentLogsSection: some View {

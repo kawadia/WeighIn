@@ -118,6 +118,21 @@ struct ChartsView: View {
                             .fill(AppTheme.surface)
                     )
                 }
+
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("AI Analysis")
+                        .font(.headline)
+                        .foregroundStyle(AppTheme.textPrimary)
+
+                    Text("Coming soon: deeper pattern analysis from your weight trajectory and notes.")
+                        .font(.subheadline)
+                        .foregroundStyle(AppTheme.textSecondary)
+                }
+                .padding()
+                .background(
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .fill(AppTheme.surface)
+                )
             }
             .padding(16)
         }

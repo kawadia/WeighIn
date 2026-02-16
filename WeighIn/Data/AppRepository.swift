@@ -90,7 +90,7 @@ final class AppRepository: ObservableObject {
             loadAll()
             return note.id
         } catch {
-            lastErrorMessage = "Could not autosave note: \(error.localizedDescription)"
+            lastErrorMessage = "Could not save note: \(error.localizedDescription)"
             return id
         }
     }
@@ -199,6 +199,27 @@ final class AppRepository: ObservableObject {
         return CSVCodec.export(logs: logs, notesByID: noteMap)
     }
 
+    func exportJSON() -> Data {
+        let payload = ExportPayload(
+            exportedAt: Date(),
+            settings: settings,
+            profile: profile,
+            logs: logs.sorted(by: { $0.timestamp < $1.timestamp }),
+            notes: notes.sorted(by: { $0.timestamp < $1.timestamp })
+        )
+
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        encoder.dateEncodingStrategy = .iso8601
+
+        do {
+            return try encoder.encode(payload)
+        } catch {
+            lastErrorMessage = "Could not export JSON: \(error.localizedDescription)"
+            return Data()
+        }
+    }
+
     func note(for log: WeightLog) -> NoteEntry? {
         guard let noteID = log.noteID else { return nil }
         return notes.first(where: { $0.id == noteID })
@@ -247,4 +268,12 @@ final class AppRepository: ObservableObject {
         }
         return values
     }
+}
+
+private struct ExportPayload: Codable {
+    let exportedAt: Date
+    let settings: AppSettings
+    let profile: UserProfile
+    let logs: [WeightLog]
+    let notes: [NoteEntry]
 }

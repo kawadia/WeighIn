@@ -22,6 +22,7 @@ struct SettingsView: View {
 
     @State private var showImporter = false
     @State private var showExporter = false
+    @State private var showJSONExporter = false
 
     var body: some View {
         NavigationStack {
@@ -61,6 +62,16 @@ struct SettingsView: View {
             ) { result in
                 if case let .failure(error) = result {
                     repository.lastErrorMessage = "Unable to export CSV: \(error.localizedDescription)"
+                }
+            }
+            .fileExporter(
+                isPresented: $showJSONExporter,
+                document: JSONExportDocument(data: repository.exportJSON()),
+                contentType: .json,
+                defaultFilename: "weighin-export"
+            ) { result in
+                if case let .failure(error) = result {
+                    repository.lastErrorMessage = "Unable to export JSON: \(error.localizedDescription)"
                 }
             }
         }
@@ -131,9 +142,17 @@ struct SettingsView: View {
                 showImporter = true
             }
 
-            Button("Export Data") {
+            Button("Export CSV") {
                 showExporter = true
             }
+
+            Button("Export JSON") {
+                showJSONExporter = true
+            }
+
+            Text("Tip: Export JSON and upload it to your favorite AI chatbot for a deeper analysis of trends, notes, and correlations.")
+                .font(.caption)
+                .foregroundStyle(AppTheme.textSecondary)
         }
     }
 
@@ -257,6 +276,24 @@ struct SettingsView: View {
 
 private struct CSVExportDocument: FileDocument {
     static var readableContentTypes: [UTType] { [.commaSeparatedText, .text] }
+
+    let data: Data
+
+    init(data: Data) {
+        self.data = data
+    }
+
+    init(configuration: ReadConfiguration) throws {
+        data = configuration.file.regularFileContents ?? Data()
+    }
+
+    func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
+        FileWrapper(regularFileWithContents: data)
+    }
+}
+
+private struct JSONExportDocument: FileDocument {
+    static var readableContentTypes: [UTType] { [.json] }
 
     let data: Data
 

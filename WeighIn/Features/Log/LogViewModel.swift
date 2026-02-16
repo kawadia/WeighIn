@@ -5,11 +5,9 @@ final class LogViewModel: ObservableObject {
     @Published var weightInput: String = ""
     @Published var noteInput: String = ""
     @Published var entryTimestamp: Date = Date()
-    @Published var autosaveNotes = true
-    @Published var lastAutosaveMessage = ""
+    @Published var lastSaveMessage = ""
 
-    private var autosaveTask: Task<Void, Never>?
-    private var autosavedNoteID: String?
+    private var lastSavedNoteID: String?
 
     var parsedWeight: Double? {
         Double(weightInput)
@@ -49,56 +47,13 @@ final class LogViewModel: ObservableObject {
     }
 
     func saveNoteNow(using repository: AppRepository) {
-        autosaveTask?.cancel()
-        autosavedNoteID = repository.upsertStandaloneNote(
-            id: autosavedNoteID,
+        lastSavedNoteID = repository.upsertStandaloneNote(
+            id: lastSavedNoteID,
             text: noteInput,
             timestamp: Date()
         )
         if !noteInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            lastAutosaveMessage = "Saved \(DateFormatting.shortDateTime.string(from: Date()))"
+            lastSaveMessage = "Saved \(DateFormatting.shortDateTime.string(from: Date()))"
         }
-    }
-
-    func noteChanged(using repository: AppRepository) {
-        guard autosaveNotes else { return }
-        scheduleAutosave(using: repository)
-    }
-
-    func autosaveSettingChanged(using repository: AppRepository) {
-        autosaveTask?.cancel()
-        if autosaveNotes {
-            scheduleAutosave(using: repository)
-        }
-    }
-
-    private func scheduleAutosave(using repository: AppRepository) {
-        autosaveTask?.cancel()
-        let trimmed = noteInput.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
-
-        autosaveTask = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: 1_500_000_000)
-            guard let self else { return }
-            await MainActor.run {
-                self.performAutosave(using: repository)
-            }
-        }
-    }
-
-    private func performAutosave(using repository: AppRepository) {
-        let trimmed = noteInput.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
-
-        autosavedNoteID = repository.upsertStandaloneNote(
-            id: autosavedNoteID,
-            text: noteInput,
-            timestamp: Date()
-        )
-        lastAutosaveMessage = "Autosaved \(DateFormatting.shortDateTime.string(from: Date()))"
-    }
-
-    deinit {
-        autosaveTask?.cancel()
     }
 }

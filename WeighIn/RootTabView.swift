@@ -13,7 +13,7 @@ struct RootTabView: View {
 
             ChartsView()
                 .tabItem {
-                    Label("Charts", systemImage: "chart.xyaxis.line")
+                    Label("AI Analysis", systemImage: "chart.xyaxis.line")
                 }
 
             SettingsView()
