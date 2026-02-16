@@ -8,13 +8,72 @@ struct LogView: View {
     @FocusState private var noteEditorFocused: Bool
 
     var body: some View {
-        GeometryReader { geometry in
+        GeometryReader { _ in
             ScrollView {
                 VStack(spacing: 12) {
                     titleBar
-                    weightEntrySection(height: max(258, geometry.size.height * 0.4))
-                    notesSection(height: max(290, geometry.size.height * 0.44))
-                        .padding(.top, 8)
+
+                    EntryEditorCard(
+                        weightText: model.weightInput.isEmpty ? "--" : model.weightInput,
+                        unitLabel: repository.settings.defaultUnit.label,
+                        timestamp: $model.entryTimestamp,
+                        noteInput: $model.noteInput,
+                        noteFocused: $noteEditorFocused,
+                        saveTitle: "Save Entry",
+                        saveEnabled: model.parsedWeight != nil,
+                        statusMessage: model.lastSaveMessage.isEmpty ? " " : model.lastSaveMessage,
+                        onKeyTap: { key in
+                            model.handleKey(key)
+                        },
+                        onSave: {
+                            model.saveUnifiedEntry(using: repository)
+                            noteEditorFocused = false
+                        }
+                    ) {
+                        VStack(spacing: 8) {
+                            HStack {
+                                Spacer()
+
+                                Label(
+                                    model.isVoiceRecording ? "Listening…" : "Hold to Talk",
+                                    systemImage: model.isVoiceRecording ? "waveform" : "mic.fill"
+                                )
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(model.isVoiceRecording ? .black : AppTheme.textPrimary)
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 10)
+                                .background(model.isVoiceRecording ? Color.red.opacity(0.9) : AppTheme.surface)
+                                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                                .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                                .gesture(
+                                    DragGesture(minimumDistance: 0)
+                                        .onChanged { _ in
+                                            model.beginVoiceCapturePress()
+                                        }
+                                        .onEnded { _ in
+                                            model.endVoiceCapturePress()
+                                        }
+                                )
+                                .accessibilityLabel("Hold to talk")
+
+                                Spacer()
+                            }
+
+                            if model.isVoiceRecording || !model.liveVoiceTranscript.isEmpty {
+                                Text(model.liveVoiceTranscript.isEmpty ? "Listening…" : model.liveVoiceTranscript)
+                                    .font(.caption)
+                                    .foregroundStyle(AppTheme.textSecondary)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 8)
+                                    .background(
+                                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                            .fill(AppTheme.surface)
+                                    )
+                            }
+                        }
+                    }
+
                     recentLogsSection
                 }
                 .padding(.horizontal, 16)
@@ -62,7 +121,7 @@ struct LogView: View {
                 .frame(width: 34, height: 34)
 
             Text("Weigh & Reflect")
-                .font(.system(size: 34, weight: .heavy, design: .rounded))
+                .font(.system(size: 28, weight: .heavy, design: .rounded))
                 .foregroundStyle(
                     LinearGradient(
                         colors: [Color(red: 138 / 255, green: 246 / 255, blue: 171 / 255), AppTheme.accent],
@@ -74,146 +133,6 @@ struct LogView: View {
         }
         .frame(maxWidth: .infinity, alignment: .center)
         .padding(.bottom, 4)
-    }
-
-    private func weightEntrySection(height: CGFloat) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 12) {
-                Text(weightDisplay)
-                    .font(.system(size: 46, weight: .bold, design: .rounded))
-                    .foregroundStyle(AppTheme.textPrimary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 12)
-                    .background(
-                        RoundedRectangle(cornerRadius: 16, style: .continuous)
-                            .fill(AppTheme.surface)
-                    )
-
-                Button {
-                    model.saveCurrentWeight(using: repository)
-                } label: {
-                    Text("Save")
-                        .font(.headline)
-                        .foregroundStyle(.black)
-                        .frame(width: 96, height: 72)
-                        .background(AppTheme.accent)
-                        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-                }
-                .disabled(model.parsedWeight == nil)
-                .opacity(model.parsedWeight == nil ? 0.4 : 1)
-            }
-
-            NumericKeypad { key in
-                model.handleKey(key)
-            }
-            .padding(12)
-            .background(
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .fill(Color.black.opacity(0.25))
-            )
-
-            HStack(spacing: 8) {
-                dateSelectorChip
-                timeSelectorChip
-            }
-            .padding(.top, 4)
-            .frame(maxWidth: .infinity, alignment: .center)
-        }
-        .frame(minHeight: height, alignment: .top)
-        .padding(14)
-        .background(sectionCardBackground)
-        .overlay(sectionCardBorder)
-    }
-
-    private func notesSection(height: CGFloat) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Reflections & Notes")
-                .font(.system(size: 24, weight: .bold, design: .rounded))
-                .foregroundStyle(AppTheme.textPrimary)
-                .frame(maxWidth: .infinity, alignment: .center)
-
-            Text("How was yesterday? Sleep, food, exercise, stress, mood, and anything else.")
-                .font(.subheadline)
-                .foregroundStyle(AppTheme.textSecondary)
-
-            TextEditor(text: $model.noteInput)
-                .frame(minHeight: 190)
-                .focused($noteEditorFocused)
-                .padding(10)
-                .background(
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .fill(AppTheme.surface)
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .stroke(AppTheme.accentMuted.opacity(0.5), lineWidth: 1)
-                )
-
-            HStack(alignment: .center) {
-                Spacer()
-
-                Label(
-                    model.isVoiceRecording ? "Listening…" : "Hold to Talk",
-                    systemImage: model.isVoiceRecording ? "waveform" : "mic.fill"
-                )
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(model.isVoiceRecording ? .black : AppTheme.textPrimary)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 10)
-                .background(model.isVoiceRecording ? Color.red.opacity(0.9) : AppTheme.surface)
-                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                .gesture(
-                    DragGesture(minimumDistance: 0)
-                        .onChanged { _ in
-                            model.beginVoiceCapturePress()
-                        }
-                        .onEnded { _ in
-                            model.endVoiceCapturePress()
-                        }
-                )
-                .accessibilityLabel("Hold to talk")
-
-                Button {
-                    model.saveNoteNow(using: repository)
-                    noteEditorFocused = false
-                } label: {
-                    Text("Save Note")
-                        .font(.headline)
-                        .foregroundStyle(.black)
-                        .padding(.horizontal, 22)
-                        .padding(.vertical, 10)
-                        .background(AppTheme.accent)
-                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                }
-                .disabled(!model.canSaveNote)
-                .opacity(model.canSaveNote ? 1 : 0.4)
-            }
-
-            Text(model.lastSaveMessage.isEmpty ? " " : model.lastSaveMessage)
-                .font(.caption)
-                .foregroundStyle(AppTheme.textSecondary)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .lineLimit(1)
-
-            if model.isVoiceRecording || !model.liveVoiceTranscript.isEmpty {
-                Text(model.liveVoiceTranscript.isEmpty ? "Listening…" : model.liveVoiceTranscript)
-                    .font(.caption)
-                    .foregroundStyle(AppTheme.textSecondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 8)
-                    .background(
-                        RoundedRectangle(cornerRadius: 10, style: .continuous)
-                            .fill(AppTheme.surface)
-                    )
-            }
-        }
-        .frame(minHeight: height, alignment: .top)
-        .padding(14)
-        .background(sectionCardBackground)
-        .overlay(sectionCardBorder)
     }
 
     private var recentLogsSection: some View {
@@ -299,9 +218,115 @@ struct LogView: View {
         .overlay(sectionCardBorder)
     }
 
-    private var weightDisplay: String {
-        let value = model.weightInput.isEmpty ? "--" : model.weightInput
-        return "\(value) \(repository.settings.defaultUnit.label)"
+    private var sectionCardBackground: some View {
+        RoundedRectangle(cornerRadius: 20, style: .continuous)
+            .fill(AppTheme.surface.opacity(0.35))
+    }
+
+    private var sectionCardBorder: some View {
+        RoundedRectangle(cornerRadius: 20, style: .continuous)
+            .stroke(AppTheme.accentMuted.opacity(0.28), lineWidth: 1)
+    }
+}
+
+private struct EntryEditorCard<Accessory: View>: View {
+    let weightText: String
+    let unitLabel: String
+    @Binding var timestamp: Date
+    @Binding var noteInput: String
+    var noteFocused: FocusState<Bool>.Binding
+    let saveTitle: String
+    let saveEnabled: Bool
+    let statusMessage: String?
+    let onKeyTap: (String) -> Void
+    let onSave: () -> Void
+    @ViewBuilder let accessory: () -> Accessory
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("\(weightText) \(unitLabel)")
+                .font(.system(size: 31, weight: .bold, design: .rounded))
+                .foregroundStyle(AppTheme.textPrimary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 7)
+                .background(
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .fill(AppTheme.surface)
+                )
+
+            NumericKeypad { key in
+                onKeyTap(key)
+            }
+            .padding(8)
+            .background(
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .fill(Color.black.opacity(0.25))
+            )
+
+            HStack(spacing: 8) {
+                dateSelectorChip
+                timeSelectorChip
+            }
+            .frame(maxWidth: .infinity, alignment: .center)
+
+            ZStack(alignment: .topLeading) {
+                TextEditor(text: $noteInput)
+                    .focused(noteFocused)
+                    .padding(6)
+
+                if noteInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    Text("How was your day? Sleep, food, exercise, stress, mood, and anything else.\nAdd a quick reflection to improve future analysis quality.")
+                        .font(.subheadline)
+                        .foregroundStyle(AppTheme.textSecondary.opacity(0.55))
+                        .padding(.horizontal, 14)
+                        .padding(.top, 14)
+                        .allowsHitTesting(false)
+                }
+            }
+            .frame(minHeight: 132)
+            .background(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(AppTheme.surface)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .stroke(AppTheme.accentMuted.opacity(0.5), lineWidth: 1)
+            )
+
+            accessory()
+
+            Button {
+                onSave()
+            } label: {
+                Text(saveTitle)
+                    .font(.headline)
+                    .foregroundStyle(.black)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 12)
+                    .background(AppTheme.accent)
+                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            }
+            .disabled(!saveEnabled)
+            .opacity(saveEnabled ? 1 : 0.4)
+
+            if let statusMessage {
+                Text(statusMessage)
+                    .font(.caption)
+                    .foregroundStyle(AppTheme.textSecondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .lineLimit(1)
+            }
+        }
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .fill(AppTheme.surface.opacity(0.35))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .stroke(AppTheme.accentMuted.opacity(0.28), lineWidth: 1)
+        )
     }
 
     private var dateSelectorChip: some View {
@@ -311,7 +336,7 @@ struct LogView: View {
 
             DatePicker(
                 "",
-                selection: $model.entryTimestamp,
+                selection: $timestamp,
                 displayedComponents: .date
             )
             .labelsHidden()
@@ -333,7 +358,7 @@ struct LogView: View {
 
             DatePicker(
                 "",
-                selection: $model.entryTimestamp,
+                selection: $timestamp,
                 displayedComponents: .hourAndMinute
             )
             .labelsHidden()
@@ -347,16 +372,6 @@ struct LogView: View {
                 .fill(AppTheme.surface)
         )
     }
-
-    private var sectionCardBackground: some View {
-        RoundedRectangle(cornerRadius: 20, style: .continuous)
-            .fill(AppTheme.surface.opacity(0.35))
-    }
-
-    private var sectionCardBorder: some View {
-        RoundedRectangle(cornerRadius: 20, style: .continuous)
-            .stroke(AppTheme.accentMuted.opacity(0.28), lineWidth: 1)
-    }
 }
 
 private struct EditLogSheet: View {
@@ -368,6 +383,7 @@ private struct EditLogSheet: View {
     @State private var entryDate: Date
     @State private var weightInput: String
     @State private var noteInput: String = ""
+    @FocusState private var noteEditorFocused: Bool
 
     init(log: WeightLog) {
         self.log = log
@@ -377,36 +393,37 @@ private struct EditLogSheet: View {
 
     var body: some View {
         NavigationStack {
-            Form {
-                Section("Date & Time") {
-                    DatePicker("When", selection: $entryDate)
-                }
-
-                Section("Weight") {
-                    HStack {
-                        TextField("e.g. 182.4", text: $weightInput)
-                            .keyboardType(.decimalPad)
-                        Text(log.unit.label)
-                            .foregroundStyle(.secondary)
+            ScrollView {
+                EntryEditorCard(
+                    weightText: weightInput.isEmpty ? "--" : weightInput,
+                    unitLabel: log.unit.label,
+                    timestamp: $entryDate,
+                    noteInput: $noteInput,
+                    noteFocused: $noteEditorFocused,
+                    saveTitle: "Update",
+                    saveEnabled: Double(weightInput) != nil,
+                    statusMessage: nil,
+                    onKeyTap: { key in
+                        handleKey(key)
+                    },
+                    onSave: {
+                        save()
                     }
+                ) {
+                    EmptyView()
                 }
-
-                Section("Note") {
-                    TextEditor(text: $noteInput)
-                        .frame(minHeight: 120)
+                .padding(.horizontal, 16)
+                .padding(.top, 12)
+                .padding(.bottom, 20)
+                .onTapGesture {
+                    noteEditorFocused = false
                 }
             }
+            .background(AppTheme.background.ignoresSafeArea())
             .navigationTitle("Edit Entry")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
-                }
-
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Save") {
-                        save()
-                    }
-                    .disabled(Double(weightInput) == nil)
                 }
             }
             .onAppear {
@@ -415,9 +432,31 @@ private struct EditLogSheet: View {
         }
     }
 
+    private func handleKey(_ key: String) {
+        switch key {
+        case "⌫":
+            guard !weightInput.isEmpty else { return }
+            weightInput.removeLast()
+        case ".":
+            guard !weightInput.contains(".") else { return }
+            weightInput = weightInput.isEmpty ? "0." : weightInput + "."
+        default:
+            guard weightInput.count < 7 else { return }
+            if key == "0", weightInput == "0" {
+                return
+            }
+            if weightInput == "0" {
+                weightInput = key
+            } else {
+                weightInput.append(key)
+            }
+        }
+    }
+
     private func save() {
         guard let weight = Double(weightInput), weight > 0 else { return }
         repository.updateWeightLog(log, weight: weight, timestamp: entryDate, noteText: noteInput)
+        noteEditorFocused = false
         dismiss()
     }
 }

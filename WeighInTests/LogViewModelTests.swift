@@ -38,6 +38,36 @@ final class LogViewModelTests: XCTestCase {
         XCTAssertEqual(repository.logs.first?.timestamp, timestamp)
     }
 
+    func testSaveUnifiedEntrySavesWeightAndReflectionTogether() throws {
+        let repository = try TestSupport.makeRepository()
+        let model = LogViewModel()
+        let timestamp = Date(timeIntervalSince1970: 1_700_000_200)
+
+        model.weightInput = "190.1"
+        model.noteInput = "Hard workout + better sleep"
+        model.entryTimestamp = timestamp
+        model.saveUnifiedEntry(using: repository)
+
+        XCTAssertEqual(repository.logs.count, 1)
+        XCTAssertEqual(repository.notes.count, 1)
+        XCTAssertEqual(repository.logs.first?.weight, 190.1)
+        XCTAssertEqual(repository.logs.first?.timestamp, timestamp)
+        XCTAssertEqual(repository.note(for: repository.logs[0])?.text, "Hard workout + better sleep")
+        XCTAssertEqual(model.weightInput, "")
+        XCTAssertEqual(model.noteInput, "")
+    }
+
+    func testSaveUnifiedEntryWithoutWeightShowsValidationMessage() throws {
+        let repository = try TestSupport.makeRepository()
+        let model = LogViewModel()
+
+        model.noteInput = "note only"
+        model.saveUnifiedEntry(using: repository)
+
+        XCTAssertEqual(repository.logs.count, 0)
+        XCTAssertTrue(model.lastSaveMessage.contains("weight"))
+    }
+
     func testSaveNoteNowUpsertsSameNoteID() throws {
         let repository = try TestSupport.makeRepository()
         let model = LogViewModel()

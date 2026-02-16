@@ -1,9 +1,20 @@
 import Foundation
 import AVFoundation
 import Speech
+import Combine
 
 @MainActor
 final class LogViewModel: ObservableObject {
+    private struct EntryDraft: Codable {
+        let weightInput: String
+        let noteInput: String
+        let entryTimestamp: Date
+    }
+
+    private enum Constants {
+        static let draftDefaultsKey = "log_entry_draft_v1"
+    }
+
     @Published var weightInput: String = ""
     @Published var noteInput: String = ""
     @Published var entryTimestamp: Date = Date()
@@ -15,10 +26,28 @@ final class LogViewModel: ObservableObject {
     private var lastSavedNormalizedNoteText = ""
     private var isVoicePressActive = false
     private var isVoiceStartInFlight = false
+    private let shouldPersistDraft: Bool
+    private var cancellables: Set<AnyCancellable> = []
     private let audioEngine = AVAudioEngine()
     private let speechRecognizer = SFSpeechRecognizer(locale: Locale.current)
     private var recognitionRequest: SFSpeechAudioBufferRecognitionRequest?
     private var recognitionTask: SFSpeechRecognitionTask?
+
+    convenience init() {
+        self.init(shouldPersistDraft: LogViewModel.defaultShouldPersistDraft)
+    }
+
+    init(shouldPersistDraft: Bool) {
+        self.shouldPersistDraft = shouldPersistDraft
+        if shouldPersistDraft {
+            restoreDraftIfAvailable()
+            setupDraftAutosave()
+        }
+    }
+
+    nonisolated static var defaultShouldPersistDraft: Bool {
+        ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] == nil
+    }
 
     var parsedWeight: Double? {
         Double(weightInput)
@@ -60,6 +89,34 @@ final class LogViewModel: ObservableObject {
         )
         weightInput = ""
         entryTimestamp = Date()
+    }
+
+    func saveUnifiedEntry(using repository: AppRepository) {
+        guard let weight = parsedWeight, weight > 0 else {
+            lastSaveMessage = "Enter a valid weight to save"
+            return
+        }
+
+        let normalizedNote = noteInput.trimmingCharacters(in: .whitespacesAndNewlines)
+        repository.addWeightLog(
+            weight: weight,
+            timestamp: entryTimestamp,
+            noteText: normalizedNote.isEmpty ? nil : normalizedNote,
+            source: .manual
+        )
+
+        guard repository.lastErrorMessage == nil else { return }
+
+        weightInput = ""
+        noteInput = ""
+        entryTimestamp = Date()
+        clearDraft()
+
+        if normalizedNote.isEmpty {
+            lastSaveMessage = "Saved. Reflection is optional but improves analysis."
+        } else {
+            lastSaveMessage = "Saved entry \(DateFormatting.shortDateTime.string(from: Date()))"
+        }
     }
 
     func saveNoteNow(using repository: AppRepository) {
@@ -243,5 +300,57 @@ final class LogViewModel: ObservableObject {
                 }
             }
         }
+    }
+
+    private func setupDraftAutosave() {
+        Publishers.CombineLatest3($weightInput, $noteInput, $entryTimestamp)
+            .debounce(for: .milliseconds(350), scheduler: RunLoop.main)
+            .sink { [weak self] weightInput, noteInput, entryTimestamp in
+                self?.persistDraft(
+                    weightInput: weightInput,
+                    noteInput: noteInput,
+                    entryTimestamp: entryTimestamp
+                )
+            }
+            .store(in: &cancellables)
+    }
+
+    private func persistDraft(weightInput: String, noteInput: String, entryTimestamp: Date) {
+        guard shouldPersistDraft else { return }
+
+        let trimmedNote = noteInput.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !weightInput.isEmpty || !trimmedNote.isEmpty else {
+            UserDefaults.standard.removeObject(forKey: Constants.draftDefaultsKey)
+            return
+        }
+
+        let draft = EntryDraft(
+            weightInput: weightInput,
+            noteInput: noteInput,
+            entryTimestamp: entryTimestamp
+        )
+        guard let data = try? JSONEncoder().encode(draft) else { return }
+        UserDefaults.standard.set(data, forKey: Constants.draftDefaultsKey)
+    }
+
+    private func restoreDraftIfAvailable() {
+        guard shouldPersistDraft else { return }
+        guard let data = UserDefaults.standard.data(forKey: Constants.draftDefaultsKey),
+              let draft = try? JSONDecoder().decode(EntryDraft.self, from: data) else {
+            return
+        }
+
+        let trimmedNote = draft.noteInput.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !draft.weightInput.isEmpty || !trimmedNote.isEmpty else { return }
+
+        weightInput = draft.weightInput
+        noteInput = draft.noteInput
+        entryTimestamp = draft.entryTimestamp
+        lastSaveMessage = "Draft restored"
+    }
+
+    private func clearDraft() {
+        guard shouldPersistDraft else { return }
+        UserDefaults.standard.removeObject(forKey: Constants.draftDefaultsKey)
     }
 }
