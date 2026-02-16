@@ -10,28 +10,45 @@ final class AppRepository: ObservableObject {
     @Published var profile: UserProfile = .empty
     @Published var lastErrorMessage: String?
     @Published private(set) var syncInProgress = false
+    @Published private(set) var backupInProgress = false
+    @Published private(set) var iCloudBackupEnabled = false
+    @Published private(set) var backupFolderBookmarkData: Data?
+    @Published private(set) var lastBackupAt: Date?
+    @Published private(set) var lastBackupError: String?
 
     private let store: SQLiteStore
     private let syncService: CloudKitSyncService?
     private let cloudKitSyncFeatureEnabled: Bool
     private let reminderScheduler: (Bool, Int, Int) -> Void
+    private let preferences: UserDefaults
     private var shouldRunSyncAgain = false
     private var forceNextSync = false
+    private var backupTask: Task<Void, Never>?
+
+    private enum BackupPreferencesKey {
+        static let enabled = "backup.enabled"
+        static let folderBookmarkData = "backup.folderBookmarkData"
+        static let lastBackupAt = "backup.lastBackupAt"
+        static let lastBackupError = "backup.lastBackupError"
+    }
 
     init(
         store: SQLiteStore = try! SQLiteStore(),
         syncService: CloudKitSyncService? = nil,
         cloudKitSyncFeatureEnabled: Bool = false,
-        reminderScheduler: @escaping (Bool, Int, Int) -> Void = NotificationScheduler.updateDailyReminder
+        reminderScheduler: @escaping (Bool, Int, Int) -> Void = NotificationScheduler.updateDailyReminder,
+        preferences: UserDefaults = .standard
     ) {
         self.store = store
         self.cloudKitSyncFeatureEnabled = cloudKitSyncFeatureEnabled
         self.reminderScheduler = reminderScheduler
+        self.preferences = preferences
         if cloudKitSyncFeatureEnabled {
             self.syncService = syncService ?? CloudKitSyncService()
         } else {
             self.syncService = nil
         }
+        loadBackupPreferences()
         loadAll()
         if cloudKitSyncFeatureEnabled {
             queueSyncIfEnabled()
@@ -56,6 +73,83 @@ final class AppRepository: ObservableObject {
         } catch {
             lastErrorMessage = "Could not load local data: \(error.localizedDescription)"
         }
+    }
+
+    func setICloudBackupEnabled(_ enabled: Bool) {
+        iCloudBackupEnabled = enabled
+        preferences.set(enabled, forKey: BackupPreferencesKey.enabled)
+        if enabled {
+            triggerDailyBackupIfNeeded()
+        }
+    }
+
+    func setBackupFolder(_ url: URL) {
+        let hasAccess = url.startAccessingSecurityScopedResource()
+        defer {
+            if hasAccess {
+                url.stopAccessingSecurityScopedResource()
+            }
+        }
+
+        do {
+            let bookmarkData = try url.bookmarkData(
+                options: bookmarkCreationOptions(),
+                includingResourceValuesForKeys: nil,
+                relativeTo: nil
+            )
+            backupFolderBookmarkData = bookmarkData
+            lastBackupError = nil
+            preferences.set(bookmarkData, forKey: BackupPreferencesKey.folderBookmarkData)
+            preferences.removeObject(forKey: BackupPreferencesKey.lastBackupError)
+
+            if iCloudBackupEnabled {
+                triggerDailyBackupIfNeeded()
+            }
+        } catch {
+            lastErrorMessage = "Could not save backup folder: \(error.localizedDescription)"
+        }
+    }
+
+    func clearBackupFolder() {
+        backupFolderBookmarkData = nil
+        preferences.removeObject(forKey: BackupPreferencesKey.folderBookmarkData)
+    }
+
+    func backupFolderDisplayName() -> String? {
+        guard let bookmarkData = backupFolderBookmarkData else { return nil }
+        var stale = false
+        guard let url = try? URL(
+            resolvingBookmarkData: bookmarkData,
+            options: bookmarkResolutionOptions(),
+            relativeTo: nil,
+            bookmarkDataIsStale: &stale
+        ) else {
+            return nil
+        }
+        return url.lastPathComponent
+    }
+
+    func triggerDailyBackupIfNeeded() {
+        guard iCloudBackupEnabled else { return }
+        guard backupTask == nil else { return }
+        guard let bookmarkData = backupFolderBookmarkData else { return }
+        guard shouldRunDailyBackup(now: Date(), lastBackupAt: lastBackupAt) else { return }
+        runBackup(bookmarkData: bookmarkData)
+    }
+
+    func triggerBackupNow() {
+        guard !backupInProgress else { return }
+        guard iCloudBackupEnabled else {
+            lastBackupError = "Enable iCloud Drive backup first."
+            preferences.set(lastBackupError, forKey: BackupPreferencesKey.lastBackupError)
+            return
+        }
+        guard let bookmarkData = backupFolderBookmarkData else {
+            lastBackupError = "Choose an iCloud Drive folder for backups first."
+            preferences.set(lastBackupError, forKey: BackupPreferencesKey.lastBackupError)
+            return
+        }
+        runBackup(bookmarkData: bookmarkData)
     }
 
     func addWeightLog(
@@ -294,11 +388,11 @@ final class AppRepository: ObservableObject {
 
     func importSQLite(from url: URL) {
         do {
-            try store.importDatabase(from: url)
+            try store.mergeDatabaseWithoutOverwriting(from: url)
             loadAll()
             queueSyncIfEnabled()
         } catch {
-            lastErrorMessage = "SQLite import failed: \(error.localizedDescription)"
+            lastErrorMessage = "SQLite restore failed: \(error.localizedDescription)"
         }
     }
 
@@ -418,6 +512,54 @@ final class AppRepository: ObservableObject {
         return values
     }
 
+    private func loadBackupPreferences() {
+        iCloudBackupEnabled = preferences.bool(forKey: BackupPreferencesKey.enabled)
+        backupFolderBookmarkData = preferences.data(forKey: BackupPreferencesKey.folderBookmarkData)
+        lastBackupAt = preferences.object(forKey: BackupPreferencesKey.lastBackupAt) as? Date
+        lastBackupError = preferences.string(forKey: BackupPreferencesKey.lastBackupError)
+    }
+
+    private func shouldRunDailyBackup(now: Date, lastBackupAt: Date?) -> Bool {
+        guard let lastBackupAt else { return true }
+        let startOfToday = Calendar.current.startOfDay(for: now)
+        return lastBackupAt < startOfToday
+    }
+
+    private func runBackup(bookmarkData: Data) {
+        guard backupTask == nil else { return }
+        backupInProgress = true
+
+        let databaseURL = store.databaseFileURL()
+        backupTask = Task(priority: .utility) { [weak self] in
+            let result: Result<Date, Error> = await withCheckedContinuation { (continuation: CheckedContinuation<Result<Date, Error>, Never>) in
+                DispatchQueue.global(qos: .utility).async {
+                    continuation.resume(
+                        returning: ICloudDriveBackupWorker.backupSQLiteSnapshot(
+                            databaseURL: databaseURL,
+                            folderBookmarkData: bookmarkData
+                        )
+                    )
+                }
+            }
+
+            guard let self else { return }
+            self.backupTask = nil
+            self.backupInProgress = false
+
+            switch result {
+            case .success(let completedAt):
+                self.lastBackupAt = completedAt
+                self.lastBackupError = nil
+                self.preferences.set(completedAt, forKey: BackupPreferencesKey.lastBackupAt)
+                self.preferences.removeObject(forKey: BackupPreferencesKey.lastBackupError)
+            case .failure(let error):
+                self.lastBackupError = error.localizedDescription
+                self.preferences.set(error.localizedDescription, forKey: BackupPreferencesKey.lastBackupError)
+                self.lastErrorMessage = "Backup failed: \(error.localizedDescription)"
+            }
+        }
+    }
+
     private func queueSyncIfEnabled(force: Bool = false) {
         guard cloudKitSyncFeatureEnabled else { return }
         guard settings.iCloudSyncEnabled else { return }
@@ -511,6 +653,95 @@ final class AppRepository: ObservableObject {
         let canonical = "\(millis)|\(weightString)|\(unit.rawValue)|\(sourceName.lowercased())"
         let digest = SHA256.hash(data: Data(canonical.utf8))
         return digest.map { String(format: "%02x", $0) }.joined()
+    }
+}
+
+private func bookmarkCreationOptions() -> URL.BookmarkCreationOptions {
+#if os(macOS)
+    return [.withSecurityScope]
+#else
+    return []
+#endif
+}
+
+private func bookmarkResolutionOptions() -> URL.BookmarkResolutionOptions {
+#if os(macOS)
+    return [.withSecurityScope]
+#else
+    return []
+#endif
+}
+
+private enum ICloudDriveBackupWorker {
+    enum BackupError: LocalizedError {
+        case missingSecurityScope
+        case staleFolderBookmark
+
+        var errorDescription: String? {
+            switch self {
+            case .missingSecurityScope:
+                return "The selected iCloud Drive folder is not accessible anymore."
+            case .staleFolderBookmark:
+                return "The selected backup folder reference is stale. Please choose the folder again."
+            }
+        }
+    }
+
+    static func backupSQLiteSnapshot(databaseURL: URL, folderBookmarkData: Data) -> Result<Date, Error> {
+        do {
+            var isStale = false
+            let folderURL = try URL(
+                resolvingBookmarkData: folderBookmarkData,
+                options: bookmarkResolutionOptions(),
+                relativeTo: nil,
+                bookmarkDataIsStale: &isStale
+            )
+            if isStale {
+                throw BackupError.staleFolderBookmark
+            }
+
+            let hasAccess = folderURL.startAccessingSecurityScopedResource()
+            guard hasAccess else {
+                throw BackupError.missingSecurityScope
+            }
+            defer {
+                folderURL.stopAccessingSecurityScopedResource()
+            }
+
+            try FileManager.default.createDirectory(at: folderURL, withIntermediateDirectories: true)
+
+            let timestamp = Date()
+            let dateFormatter = DateFormatter()
+            dateFormatter.locale = Locale(identifier: "en_US_POSIX")
+            dateFormatter.dateFormat = "yyyy-MM-dd"
+
+            let datedBackupURL = folderURL.appendingPathComponent(
+                "weighin-backup-\(dateFormatter.string(from: timestamp)).sqlite"
+            )
+            let latestBackupURL = folderURL.appendingPathComponent("weighin-backup-latest.sqlite")
+            let temporarySnapshotURL = URL(fileURLWithPath: NSTemporaryDirectory())
+                .appendingPathComponent("weighin-snapshot-\(UUID().uuidString).sqlite")
+
+            defer {
+                try? FileManager.default.removeItem(at: temporarySnapshotURL)
+            }
+
+            try SQLiteStore.createDatabaseSnapshot(from: databaseURL, to: temporarySnapshotURL)
+
+            if FileManager.default.fileExists(atPath: datedBackupURL.path) {
+                try FileManager.default.removeItem(at: datedBackupURL)
+            }
+            try FileManager.default.copyItem(at: temporarySnapshotURL, to: datedBackupURL)
+
+            if FileManager.default.fileExists(atPath: latestBackupURL.path) {
+                try FileManager.default.removeItem(at: latestBackupURL)
+            }
+            try FileManager.default.copyItem(at: temporarySnapshotURL, to: latestBackupURL)
+
+            return .success(timestamp)
+        } catch {
+            return .failure(error)
+        }
     }
 }
 

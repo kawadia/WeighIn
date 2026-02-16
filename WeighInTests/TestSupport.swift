@@ -10,11 +10,13 @@ enum TestSupport {
     @MainActor
     static func makeRepository(cloudKitSyncFeatureEnabled: Bool = false) throws -> AppRepository {
         let store = try SQLiteStore(databaseURL: makeTempDatabaseURL())
+        let defaults = UserDefaults(suiteName: "weighin.tests.\(UUID().uuidString)")!
         return AppRepository(
             store: store,
             syncService: nil,
             cloudKitSyncFeatureEnabled: cloudKitSyncFeatureEnabled,
-            reminderScheduler: { _, _, _ in }
+            reminderScheduler: { _, _, _ in },
+            preferences: defaults
         )
     }
 }

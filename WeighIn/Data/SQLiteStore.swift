@@ -51,6 +51,10 @@ final class SQLiteStore {
             .appendingPathComponent("weighin.sqlite")
     }
 
+    func databaseFileURL() -> URL {
+        databaseURL
+    }
+
     func exportDatabaseData() throws -> Data {
         let temporaryURL = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent("weighin-export-\(UUID().uuidString).sqlite")
@@ -97,6 +101,115 @@ final class SQLiteStore {
         try backup(from: sourceDB, to: db)
         try execute("PRAGMA foreign_keys = ON;")
         try migrate()
+    }
+
+    func mergeDatabaseWithoutOverwriting(from sourceURL: URL) throws {
+        let escapedPath = sourceURL.path.replacingOccurrences(of: "'", with: "''")
+        try execute("ATTACH DATABASE '\(escapedPath)' AS imported;")
+        defer {
+            try? execute("DETACH DATABASE imported;")
+        }
+
+        try execute(
+            """
+            INSERT INTO notes (id, timestamp, text, created_at, updated_at, is_deleted, sync_state)
+            SELECT imported_notes.id,
+                   imported_notes.timestamp,
+                   imported_notes.text,
+                   imported_notes.created_at,
+                   imported_notes.updated_at,
+                   imported_notes.is_deleted,
+                   imported_notes.sync_state
+            FROM imported.notes AS imported_notes
+            WHERE imported_notes.is_deleted = 0
+              AND NOT EXISTS (
+                SELECT 1
+                FROM notes AS local_notes
+                WHERE local_notes.id = imported_notes.id
+              );
+            """
+        )
+
+        try execute(
+            """
+            INSERT INTO weight_logs (id, timestamp, weight, unit, source, note_id, created_at, updated_at, is_deleted, sync_state)
+            SELECT imported_logs.id,
+                   imported_logs.timestamp,
+                   imported_logs.weight,
+                   imported_logs.unit,
+                   imported_logs.source,
+                   CASE
+                       WHEN imported_logs.note_id IS NULL THEN NULL
+                       WHEN EXISTS (
+                           SELECT 1
+                           FROM notes AS note_reference
+                           WHERE note_reference.id = imported_logs.note_id
+                             AND note_reference.is_deleted = 0
+                       ) THEN imported_logs.note_id
+                       ELSE NULL
+                   END,
+                   imported_logs.created_at,
+                   imported_logs.updated_at,
+                   imported_logs.is_deleted,
+                   imported_logs.sync_state
+            FROM imported.weight_logs AS imported_logs
+            WHERE imported_logs.is_deleted = 0
+              AND NOT EXISTS (
+                SELECT 1
+                FROM weight_logs AS local_logs
+                WHERE local_logs.id = imported_logs.id
+              );
+            """
+        )
+    }
+
+    static func createDatabaseSnapshot(from sourceURL: URL, to destinationURL: URL) throws {
+        let fileManager = FileManager.default
+        try fileManager.createDirectory(
+            at: destinationURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        if fileManager.fileExists(atPath: destinationURL.path) {
+            try fileManager.removeItem(at: destinationURL)
+        }
+
+        var sourceDB: OpaquePointer?
+        guard sqlite3_open_v2(sourceURL.path, &sourceDB, SQLITE_OPEN_READONLY, nil) == SQLITE_OK else {
+            let message = sourceDB.flatMap { String(cString: sqlite3_errmsg($0)) } ?? "Unknown error"
+            sqlite3_close(sourceDB)
+            throw StoreError.openFailed(message)
+        }
+        guard let sourceDB else {
+            throw StoreError.openFailed("Unable to allocate source database pointer")
+        }
+        defer {
+            sqlite3_close(sourceDB)
+        }
+
+        var destinationDB: OpaquePointer?
+        guard sqlite3_open(destinationURL.path, &destinationDB) == SQLITE_OK else {
+            let message = destinationDB.flatMap { String(cString: sqlite3_errmsg($0)) } ?? "Unknown error"
+            sqlite3_close(destinationDB)
+            throw StoreError.openFailed(message)
+        }
+        guard let destinationDB else {
+            throw StoreError.openFailed("Unable to allocate destination database pointer")
+        }
+        defer {
+            sqlite3_close(destinationDB)
+        }
+
+        guard let backupHandle = sqlite3_backup_init(destinationDB, "main", sourceDB, "main") else {
+            throw StoreError.executionFailed(String(cString: sqlite3_errmsg(destinationDB)))
+        }
+        defer {
+            sqlite3_backup_finish(backupHandle)
+        }
+
+        let stepResult = sqlite3_backup_step(backupHandle, -1)
+        guard stepResult == SQLITE_DONE else {
+            throw StoreError.executionFailed(String(cString: sqlite3_errmsg(destinationDB)))
+        }
     }
 
     func fetchWeightLogs() throws -> [WeightLog] {

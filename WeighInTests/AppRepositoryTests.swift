@@ -269,6 +269,46 @@ final class AppRepositoryTests: XCTestCase {
         XCTAssertEqual(destination.logs.first?.weight, source.logs.first?.weight)
     }
 
+    func testSQLiteRestoreMergesWithoutOverwritingExistingConflicts() throws {
+        let source = try TestSupport.makeRepository()
+        let timestamp = Date(timeIntervalSince1970: 1_710_000_000)
+        source.addWeightLog(
+            weight: 200.0,
+            timestamp: timestamp,
+            noteText: "Imported note",
+            source: .manual
+        )
+
+        guard let exportedLog = source.logs.first else {
+            return XCTFail("Expected exported log")
+        }
+
+        let sqliteData = source.exportSQLite()
+        let importURL = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("weighin-merge-\(UUID().uuidString).sqlite")
+        defer { try? FileManager.default.removeItem(at: importURL) }
+        try sqliteData.write(to: importURL)
+
+        let destination = try TestSupport.makeRepository()
+        destination.importSQLite(from: importURL)
+        guard let existing = destination.logs.first(where: { $0.id == exportedLog.id }) else {
+            return XCTFail("Expected preloaded log")
+        }
+        destination.updateWeightLog(
+            existing,
+            weight: 222.2,
+            timestamp: existing.timestamp,
+            noteText: destination.note(for: existing)?.text ?? ""
+        )
+        destination.importSQLite(from: importURL)
+
+        guard let mergedLog = destination.logs.first(where: { $0.id == exportedLog.id }) else {
+            return XCTFail("Expected merged log")
+        }
+
+        XCTAssertEqual(mergedLog.weight, 222.2, accuracy: 0.0001)
+    }
+
     func testAppleHealthZIPImportReadsBodyMassAndIsIdempotent() throws {
         let repository = try TestSupport.makeRepository()
 

@@ -2,12 +2,20 @@ import SwiftUI
 
 @main
 struct WeighInApp: App {
-    @StateObject private var repository = AppRepository()
+    @Environment(\.scenePhase) private var scenePhase
+    @StateObject private var repository = AppRepository(cloudKitSyncFeatureEnabled: false)
 
     var body: some Scene {
         WindowGroup {
             RootTabView()
                 .environmentObject(repository)
+                .onAppear {
+                    repository.triggerDailyBackupIfNeeded()
+                }
+                .onChange(of: scenePhase) { _, phase in
+                    guard phase == .active else { return }
+                    repository.triggerDailyBackupIfNeeded()
+                }
         }
     }
 }

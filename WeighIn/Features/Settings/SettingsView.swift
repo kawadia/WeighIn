@@ -5,12 +5,10 @@ import UIKit
 
 struct SettingsView: View {
     @EnvironmentObject private var repository: AppRepository
-    private let cloudSyncAvailable = false
 
     @State private var defaultUnit: WeightUnit = .lbs
     @State private var reminderEnabled = true
     @State private var reminderTime = Calendar.current.date(from: DateComponents(hour: 7, minute: 0)) ?? Date()
-    @State private var iCloudSyncEnabled = false
 
     @State private var birthday: Date?
     @State private var gender: Gender = .undisclosed
@@ -27,6 +25,9 @@ struct SettingsView: View {
     @State private var showExportFormatPicker = false
     @State private var showImporter = false
     @State private var showExporter = false
+    @State private var showBackupFolderPicker = false
+    @State private var showBackupRestoreImporter = false
+    @State private var iCloudBackupEnabled = false
 
     var body: some View {
         NavigationStack {
@@ -34,7 +35,7 @@ struct SettingsView: View {
                 profileSection
                 preferencesSection
                 dataSection
-                syncSection
+                backupSection
             }
             .scrollContentBackground(.hidden)
             .background(AppTheme.background)
@@ -43,7 +44,9 @@ struct SettingsView: View {
             .onChange(of: defaultUnit) { _, _ in savePreferences() }
             .onChange(of: reminderEnabled) { _, _ in savePreferences() }
             .onChange(of: reminderTime) { _, _ in savePreferences() }
-            .onChange(of: iCloudSyncEnabled) { _, _ in savePreferences() }
+            .onChange(of: iCloudBackupEnabled) { _, newValue in
+                repository.setICloudBackupEnabled(newValue)
+            }
             .onChange(of: gender) { _, _ in saveProfile() }
             .onChange(of: heightFeet) { _, _ in saveProfile() }
             .onChange(of: heightInches) { _, _ in saveProfile() }
@@ -69,6 +72,19 @@ struct SettingsView: View {
             ) { result in
                 if case let .failure(error) = result {
                     repository.lastErrorMessage = "Unable to export \(selectedExportFormat.label): \(error.localizedDescription)"
+                }
+            }
+            .fileImporter(
+                isPresented: $showBackupRestoreImporter,
+                allowedContentTypes: [.sqliteDatabase, .sqliteDBFile, .sqlite3DBFile],
+                allowsMultipleSelection: false
+            ) { result in
+                guard case let .success(urls) = result, let url = urls.first else { return }
+                importData(from: url, format: .sqlite)
+            }
+            .sheet(isPresented: $showBackupFolderPicker) {
+                BackupFolderPicker { folderURL in
+                    repository.setBackupFolder(folderURL)
                 }
             }
             .confirmationDialog("Import Format", isPresented: $showImportFormatPicker, titleVisibility: .visible) {
@@ -113,11 +129,6 @@ struct SettingsView: View {
                     ),
                     displayedComponents: .date
                 )
-
-                Button("Remove Birthday", role: .destructive) {
-                    birthday = nil
-                    saveProfile()
-                }
             } else {
                 Button("Set Birthday") {
                     birthday = Date()
@@ -169,49 +180,60 @@ struct SettingsView: View {
         }
     }
 
-    private var syncSection: some View {
-        Section("iCloud Sync") {
-            Toggle("Enable iCloud Sync", isOn: $iCloudSyncEnabled)
-                .disabled(!cloudSyncAvailable)
+    private var backupSection: some View {
+        Section("iCloud Drive Backup") {
+            Toggle("Enable Daily Backup", isOn: $iCloudBackupEnabled)
 
-            Text("Syncs your logs, notes, and profile across your devices using your private iCloud account.")
+            Text("Creates a SQLite snapshot in your selected iCloud Drive folder once per day after midnight.")
                 .font(.caption)
                 .foregroundStyle(AppTheme.textSecondary)
 
-            if !cloudSyncAvailable {
-                Text("Cloud sync is currently inactive in this build. Your data stays local on this device.")
-                    .font(.caption)
-                    .foregroundStyle(AppTheme.textSecondary)
+            Button("Choose Backup Folder") {
+                showBackupFolderPicker = true
             }
 
-            if repository.syncInProgress {
-                Label("Syncing…", systemImage: "arrow.triangle.2.circlepath")
-                    .foregroundStyle(AppTheme.textSecondary)
-            }
-
-            if let lastSyncAt = repository.settings.lastSyncAt {
-                Text("Last sync: \(DateFormatting.shortDateTime.string(from: lastSyncAt))")
+            if let folderName = repository.backupFolderDisplayName() {
+                Text("Folder: \(folderName)")
                     .font(.caption)
                     .foregroundStyle(AppTheme.textSecondary)
             } else {
-                Text("No successful sync yet.")
+                Text("No folder selected.")
                     .font(.caption)
                     .foregroundStyle(AppTheme.textSecondary)
             }
 
-            if let lastSyncError = repository.settings.lastSyncError,
-               !lastSyncError.isEmpty {
-                Text(lastSyncError)
+            if repository.backupInProgress {
+                Label("Backing up…", systemImage: "externaldrive.badge.icloud")
+                    .foregroundStyle(AppTheme.textSecondary)
+            }
+
+            if let lastBackupAt = repository.lastBackupAt {
+                Text("Last backup: \(DateFormatting.shortDateTime.string(from: lastBackupAt))")
+                    .font(.caption)
+                    .foregroundStyle(AppTheme.textSecondary)
+            } else {
+                Text("No successful backup yet.")
+                    .font(.caption)
+                    .foregroundStyle(AppTheme.textSecondary)
+            }
+
+            if let lastBackupError = repository.lastBackupError,
+               !lastBackupError.isEmpty {
+                Text(lastBackupError)
                     .font(.caption)
                     .foregroundStyle(.orange)
             }
 
-            Button("Sync Now") {
-                repository.triggerSyncNow()
+            Button("Back Up Now") {
+                repository.triggerBackupNow()
             }
-            .disabled(!cloudSyncAvailable || !iCloudSyncEnabled || repository.syncInProgress)
+            .disabled(!iCloudBackupEnabled || repository.backupInProgress)
 
-            Text("Requires an iCloud account signed into this device.")
+            Button("Restore From Backup") {
+                showBackupRestoreImporter = true
+            }
+
+            Text("Restore merges backup data and keeps your current entries when IDs conflict.")
                 .font(.caption2)
                 .foregroundStyle(AppTheme.textSecondary)
         }
@@ -243,7 +265,7 @@ struct SettingsView: View {
             hour: repository.settings.reminderHour,
             minute: repository.settings.reminderMinute
         )) ?? Date()
-        iCloudSyncEnabled = repository.settings.iCloudSyncEnabled
+        iCloudBackupEnabled = repository.iCloudBackupEnabled
 
         birthday = repository.profile.birthday
         gender = repository.profile.gender
@@ -272,7 +294,7 @@ struct SettingsView: View {
             reminderHour: hour,
             reminderMinute: minute,
             hasCompletedOnboarding: repository.settings.hasCompletedOnboarding,
-            iCloudSyncEnabled: cloudSyncAvailable ? iCloudSyncEnabled : false,
+            iCloudSyncEnabled: false,
             lastSyncAt: repository.settings.lastSyncAt,
             lastSyncError: repository.settings.lastSyncError
         )
@@ -477,5 +499,38 @@ private struct BinaryExportDocument: FileDocument {
 
     func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
         FileWrapper(regularFileWithContents: data)
+    }
+}
+
+private struct BackupFolderPicker: UIViewControllerRepresentable {
+    let onFolderPicked: (URL) -> Void
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(onFolderPicked: onFolderPicked)
+    }
+
+    func makeUIViewController(context: Context) -> UIDocumentPickerViewController {
+        let controller = UIDocumentPickerViewController(
+            forOpeningContentTypes: [.folder],
+            asCopy: false
+        )
+        controller.delegate = context.coordinator
+        controller.allowsMultipleSelection = false
+        return controller
+    }
+
+    func updateUIViewController(_ uiViewController: UIDocumentPickerViewController, context: Context) {}
+
+    final class Coordinator: NSObject, UIDocumentPickerDelegate {
+        let onFolderPicked: (URL) -> Void
+
+        init(onFolderPicked: @escaping (URL) -> Void) {
+            self.onFolderPicked = onFolderPicked
+        }
+
+        func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
+            guard let url = urls.first else { return }
+            onFolderPicked(url)
+        }
     }
 }
