@@ -102,7 +102,7 @@ private struct OnboardingSheet: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section("Welcome to WeighIn") {
+                Section("Welcome to Weight & Reflect") {
                     Text("Quick setup before your first log.")
                         .foregroundStyle(AppTheme.textSecondary)
                 }

@@ -260,7 +260,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = "";
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_CFBundleDisplayName = WeighIn;
+				INFOPLIST_KEY_CFBundleDisplayName = "Weight & Reflect";
 				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Allow selecting a profile image.";
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -292,7 +292,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = "";
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_CFBundleDisplayName = WeighIn;
+				INFOPLIST_KEY_CFBundleDisplayName = "Weight & Reflect";
 				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Allow selecting a profile image.";
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;

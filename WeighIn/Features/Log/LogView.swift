@@ -48,7 +48,7 @@ struct LogView: View {
 
     private var titleBar: some View {
         HStack {
-            Text("WeighIn")
+            Text("Weight & Reflect")
                 .font(.system(size: 28, weight: .bold, design: .rounded))
                 .foregroundStyle(AppTheme.textPrimary)
             Spacer()
@@ -139,7 +139,7 @@ struct LogView: View {
 
     private func notesSection(height: CGFloat) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Notes")
+            Text("Reflections & Notes")
                 .font(.headline)
                 .foregroundStyle(AppTheme.textPrimary)
 
