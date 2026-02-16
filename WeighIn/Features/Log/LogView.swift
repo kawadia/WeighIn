@@ -5,6 +5,7 @@ struct LogView: View {
     @StateObject private var model = LogViewModel()
     @State private var editingLog: WeightLog?
     @State private var pendingDeleteLog: WeightLog?
+    @FocusState private var noteEditorFocused: Bool
 
     var body: some View {
         GeometryReader { geometry in
@@ -19,6 +20,9 @@ struct LogView: View {
                 .padding(.horizontal, 16)
                 .padding(.top, 10)
                 .padding(.bottom, 24)
+                .onTapGesture {
+                    noteEditorFocused = false
+                }
             }
         }
         .background(AppTheme.background.ignoresSafeArea())
@@ -135,6 +139,7 @@ struct LogView: View {
 
             TextEditor(text: $model.noteInput)
                 .frame(minHeight: 190)
+                .focused($noteEditorFocused)
                 .padding(10)
                 .background(
                     RoundedRectangle(cornerRadius: 16, style: .continuous)
@@ -172,6 +177,7 @@ struct LogView: View {
 
                 Button {
                     model.saveNoteNow(using: repository)
+                    noteEditorFocused = false
                 } label: {
                     Text("Save Note")
                         .font(.headline)
