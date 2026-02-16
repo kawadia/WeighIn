@@ -1,5 +1,6 @@
 import XCTest
 @testable import WeighIn
+import zlib
 
 @MainActor
 final class AppRepositoryTests: XCTestCase {
@@ -267,4 +268,120 @@ final class AppRepositoryTests: XCTestCase {
         XCTAssertEqual(destination.notes.count, source.notes.count)
         XCTAssertEqual(destination.logs.first?.weight, source.logs.first?.weight)
     }
+
+    func testAppleHealthZIPImportReadsBodyMassAndIsIdempotent() throws {
+        let repository = try TestSupport.makeRepository()
+
+        let xml = """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <HealthData locale="en_US">
+          <ExportDate value="2026-02-16 13:00:00 -0800"/>
+          <Me HKCharacteristicTypeIdentifierDateOfBirth="1980-01-01" HKCharacteristicTypeIdentifierBiologicalSex="HKBiologicalSexMale" HKCharacteristicTypeIdentifierBloodType="HKBloodTypeNotSet" HKCharacteristicTypeIdentifierFitzpatrickSkinType="HKFitzpatrickSkinTypeNotSet" HKCharacteristicTypeIdentifierCardioFitnessMedicationsUse="HKCardioFitnessMedicationsUseUnknown"/>
+          <Record type="HKQuantityTypeIdentifierBodyMass" sourceName="Health" unit="lb" creationDate="2024-01-02 07:00:00 -0800" startDate="2024-01-02 07:00:00 -0800" endDate="2024-01-02 07:00:00 -0800" value="200.5"/>
+          <Record type="HKQuantityTypeIdentifierBodyMass" sourceName="Health" unit="lb" creationDate="2024-01-02 07:00:00 -0800" startDate="2024-01-02 07:00:00 -0800" endDate="2024-01-02 07:00:00 -0800" value="200.5"/>
+          <Record type="HKQuantityTypeIdentifierBodyMass" sourceName="Scale App" unit="kg" creationDate="2024-01-03 08:30:00 +0000" startDate="2024-01-03 08:30:00 +0000" endDate="2024-01-03 08:30:00 +0000" value="90.1"/>
+          <Record type="HKQuantityTypeIdentifierBodyMassIndex" sourceName="Health" unit="count" creationDate="2024-01-03 08:30:00 +0000" startDate="2024-01-03 08:30:00 +0000" endDate="2024-01-03 08:30:00 +0000" value="28"/>
+        </HealthData>
+        """
+
+        let zipData = makeStoredZIP(
+            entries: [
+                (name: "apple_health_export/export.xml", data: Data(xml.utf8))
+            ]
+        )
+        let zipURL = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("health-import-\(UUID().uuidString).zip")
+        defer { try? FileManager.default.removeItem(at: zipURL) }
+        try zipData.write(to: zipURL)
+
+        repository.importAppleHealthZIP(from: zipURL)
+        repository.importAppleHealthZIP(from: zipURL)
+
+        XCTAssertEqual(repository.logs.count, 2)
+        XCTAssertEqual(repository.notes.count, 0)
+        XCTAssertEqual(Set(repository.logs.map(\.source)), [.health])
+
+        let lbsLog = try XCTUnwrap(repository.logs.first(where: { $0.unit == .lbs }))
+        XCTAssertEqual(lbsLog.weight, 200.5, accuracy: 0.0001)
+
+        let kgLog = try XCTUnwrap(repository.logs.first(where: { $0.unit == .kg }))
+        XCTAssertEqual(kgLog.weight, 90.1, accuracy: 0.0001)
+    }
+}
+
+private func makeStoredZIP(entries: [(name: String, data: Data)]) -> Data {
+    var archive = Data()
+    var centralDirectory = Data()
+    var entryMetas: [(nameData: Data, data: Data, crc: UInt32, offset: UInt32)] = []
+
+    for entry in entries {
+        let nameData = Data(entry.name.utf8)
+        let crc = entry.data.withUnsafeBytes { rawBuffer -> UInt32 in
+            guard let base = rawBuffer.baseAddress?.assumingMemoryBound(to: Bytef.self) else { return 0 }
+            return crc32(0, base, uInt(rawBuffer.count))
+        }
+        let localOffset = UInt32(archive.count)
+        entryMetas.append((nameData: nameData, data: entry.data, crc: crc, offset: localOffset))
+
+        appendUInt32LE(0x04034B50, to: &archive)
+        appendUInt16LE(20, to: &archive)
+        appendUInt16LE(0, to: &archive)
+        appendUInt16LE(0, to: &archive)
+        appendUInt16LE(0, to: &archive)
+        appendUInt16LE(0, to: &archive)
+        appendUInt32LE(crc, to: &archive)
+        appendUInt32LE(UInt32(entry.data.count), to: &archive)
+        appendUInt32LE(UInt32(entry.data.count), to: &archive)
+        appendUInt16LE(UInt16(nameData.count), to: &archive)
+        appendUInt16LE(0, to: &archive)
+        archive.append(nameData)
+        archive.append(entry.data)
+    }
+
+    let centralDirectoryOffset = UInt32(archive.count)
+    for entry in entryMetas {
+        appendUInt32LE(0x02014B50, to: &centralDirectory)
+        appendUInt16LE(20, to: &centralDirectory)
+        appendUInt16LE(20, to: &centralDirectory)
+        appendUInt16LE(0, to: &centralDirectory)
+        appendUInt16LE(0, to: &centralDirectory)
+        appendUInt16LE(0, to: &centralDirectory)
+        appendUInt16LE(0, to: &centralDirectory)
+        appendUInt32LE(entry.crc, to: &centralDirectory)
+        appendUInt32LE(UInt32(entry.data.count), to: &centralDirectory)
+        appendUInt32LE(UInt32(entry.data.count), to: &centralDirectory)
+        appendUInt16LE(UInt16(entry.nameData.count), to: &centralDirectory)
+        appendUInt16LE(0, to: &centralDirectory)
+        appendUInt16LE(0, to: &centralDirectory)
+        appendUInt16LE(0, to: &centralDirectory)
+        appendUInt16LE(0, to: &centralDirectory)
+        appendUInt32LE(0, to: &centralDirectory)
+        appendUInt32LE(entry.offset, to: &centralDirectory)
+        centralDirectory.append(entry.nameData)
+    }
+
+    archive.append(centralDirectory)
+
+    appendUInt32LE(0x06054B50, to: &archive)
+    appendUInt16LE(0, to: &archive)
+    appendUInt16LE(0, to: &archive)
+    appendUInt16LE(UInt16(entries.count), to: &archive)
+    appendUInt16LE(UInt16(entries.count), to: &archive)
+    appendUInt32LE(UInt32(centralDirectory.count), to: &archive)
+    appendUInt32LE(centralDirectoryOffset, to: &archive)
+    appendUInt16LE(0, to: &archive)
+
+    return archive
+}
+
+private func appendUInt16LE(_ value: UInt16, to data: inout Data) {
+    data.append(UInt8(truncatingIfNeeded: value))
+    data.append(UInt8(truncatingIfNeeded: value >> 8))
+}
+
+private func appendUInt32LE(_ value: UInt32, to data: inout Data) {
+    data.append(UInt8(truncatingIfNeeded: value))
+    data.append(UInt8(truncatingIfNeeded: value >> 8))
+    data.append(UInt8(truncatingIfNeeded: value >> 16))
+    data.append(UInt8(truncatingIfNeeded: value >> 24))
 }

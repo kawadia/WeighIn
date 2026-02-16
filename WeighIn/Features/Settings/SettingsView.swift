@@ -33,8 +33,8 @@ struct SettingsView: View {
             Form {
                 profileSection
                 preferencesSection
-                syncSection
                 dataSection
+                syncSection
             }
             .scrollContentBackground(.hidden)
             .background(AppTheme.background)
@@ -72,7 +72,7 @@ struct SettingsView: View {
                 }
             }
             .confirmationDialog("Import Format", isPresented: $showImportFormatPicker, titleVisibility: .visible) {
-                ForEach(DataTransferFormat.allCases) { format in
+                ForEach(DataTransferFormat.importFormats) { format in
                     Button(format.label) {
                         selectedImportFormat = format
                         showImporter = true
@@ -80,7 +80,7 @@ struct SettingsView: View {
                 }
             }
             .confirmationDialog("Export Format", isPresented: $showExportFormatPicker, titleVisibility: .visible) {
-                ForEach(DataTransferFormat.allCases) { format in
+                ForEach(DataTransferFormat.exportFormats) { format in
                     Button(format.label) {
                         selectedExportFormat = format
                         showExporter = true
@@ -347,6 +347,8 @@ struct SettingsView: View {
             return repository.exportJSON()
         case .sqlite:
             return repository.exportSQLite()
+        case .appleHealthZip:
+            return Data()
         }
     }
 
@@ -368,6 +370,8 @@ struct SettingsView: View {
                 repository.importJSON(from: data)
             case .sqlite:
                 repository.importSQLite(from: url)
+            case .appleHealthZip:
+                repository.importAppleHealthZIP(from: url)
             }
         } catch {
             repository.lastErrorMessage = "Unable to read \(format.label): \(error.localizedDescription)"
@@ -379,6 +383,15 @@ private enum DataTransferFormat: String, CaseIterable, Identifiable {
     case csv
     case json
     case sqlite
+    case appleHealthZip
+
+    static var importFormats: [DataTransferFormat] {
+        [.csv, .json, .sqlite, .appleHealthZip]
+    }
+
+    static var exportFormats: [DataTransferFormat] {
+        [.csv, .json, .sqlite]
+    }
 
     var id: String { rawValue }
 
@@ -390,6 +403,8 @@ private enum DataTransferFormat: String, CaseIterable, Identifiable {
             return "JSON"
         case .sqlite:
             return "SQLite"
+        case .appleHealthZip:
+            return "Apple Health ZIP"
         }
     }
 
@@ -401,6 +416,8 @@ private enum DataTransferFormat: String, CaseIterable, Identifiable {
             return [.json]
         case .sqlite:
             return [.sqliteDatabase, .sqliteDBFile, .sqlite3DBFile]
+        case .appleHealthZip:
+            return [.zip]
         }
     }
 
@@ -412,6 +429,8 @@ private enum DataTransferFormat: String, CaseIterable, Identifiable {
             return .json
         case .sqlite:
             return .sqliteDatabase
+        case .appleHealthZip:
+            return .data
         }
     }
 
@@ -423,6 +442,8 @@ private enum DataTransferFormat: String, CaseIterable, Identifiable {
             return "weighin-export"
         case .sqlite:
             return "weighin-backup"
+        case .appleHealthZip:
+            return "weighin-export"
         }
     }
 }

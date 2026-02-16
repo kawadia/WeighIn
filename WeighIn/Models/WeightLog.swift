@@ -16,6 +16,7 @@ enum WeightLogSource: String, Codable {
     case manual
     case past
     case csv
+    case health
 }
 
 struct WeightLog: Identifiable, Codable, Hashable {
