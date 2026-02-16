@@ -127,6 +127,10 @@ struct ChartsView: View {
                     Text("Coming soon: deeper pattern analysis from your weight trajectory and notes.")
                         .font(.subheadline)
                         .foregroundStyle(AppTheme.textSecondary)
+
+                    Text("Tip: Export JSON from Settings and upload it to your favorite AI chatbot for deeper analysis of trends, notes, and correlations.")
+                        .font(.caption)
+                        .foregroundStyle(AppTheme.textSecondary)
                 }
                 .padding()
                 .background(

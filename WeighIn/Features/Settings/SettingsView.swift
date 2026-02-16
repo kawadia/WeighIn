@@ -162,10 +162,6 @@ struct SettingsView: View {
             Button("Export JSON") {
                 showJSONExporter = true
             }
-
-            Text("Tip: Export JSON and upload it to your favorite AI chatbot for a deeper analysis of trends, notes, and correlations.")
-                .font(.caption)
-                .foregroundStyle(AppTheme.textSecondary)
         }
     }
 
