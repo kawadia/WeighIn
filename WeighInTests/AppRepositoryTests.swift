@@ -177,4 +177,94 @@ final class AppRepositoryTests: XCTestCase {
         XCTAssertEqual(repository.profile.avatarPath, "avatar.png")
         XCTAssertEqual(repository.profile.birthday, birthday)
     }
+
+    func testCSVImportIsIdempotentAndCanClearLinkedNote() throws {
+        let repository = try TestSupport.makeRepository()
+        let csvWithNote = """
+        timestamp,weight,unit,note
+        2026-02-15T12:00:00Z,201.5,lbs, Had a salty dinner
+        """
+
+        repository.importCSV(from: Data(csvWithNote.utf8))
+        repository.importCSV(from: Data(csvWithNote.utf8))
+
+        XCTAssertEqual(repository.logs.count, 1)
+        XCTAssertEqual(repository.notes.count, 1)
+
+        let importedLog = try XCTUnwrap(repository.logs.first)
+        XCTAssertEqual(importedLog.source, .csv)
+        XCTAssertEqual(repository.note(for: importedLog)?.text, "Had a salty dinner")
+        let deterministicLogID = importedLog.id
+
+        let csvWithoutNote = """
+        timestamp,weight,unit,note
+        2026-02-15T12:00:00Z,201.5,lbs,
+        """
+        repository.importCSV(from: Data(csvWithoutNote.utf8))
+
+        XCTAssertEqual(repository.logs.count, 1)
+        XCTAssertEqual(repository.notes.count, 0)
+        XCTAssertEqual(repository.logs.first?.id, deterministicLogID)
+        XCTAssertNil(repository.logs.first?.noteID)
+    }
+
+    func testJSONImportIsIdempotentForSamePayload() throws {
+        let source = try TestSupport.makeRepository()
+        source.addWeightLog(
+            weight: 179.8,
+            timestamp: Date(timeIntervalSince1970: 1_706_000_000),
+            noteText: "Recovered from poor sleep",
+            source: .manual
+        )
+
+        var sourceSettings = source.settings
+        sourceSettings.defaultUnit = .kg
+        source.updateSettings(sourceSettings)
+        source.updateProfile(
+            UserProfile(
+                birthday: nil,
+                gender: .male,
+                heightCentimeters: 182.0,
+                avatarPath: nil
+            )
+        )
+
+        let payload = source.exportJSON()
+        let destination = try TestSupport.makeRepository()
+
+        destination.importJSON(from: payload)
+        destination.importJSON(from: payload)
+
+        XCTAssertEqual(destination.logs.count, 1)
+        XCTAssertEqual(destination.notes.count, 1)
+        XCTAssertEqual(destination.settings.defaultUnit, .kg)
+        XCTAssertEqual(destination.profile.gender, .male)
+        XCTAssertEqual(destination.profile.heightCentimeters, 182.0)
+    }
+
+    func testSQLiteExportImportRoundTrip() throws {
+        let source = try TestSupport.makeRepository()
+        source.addWeightLog(
+            weight: 188.2,
+            timestamp: Date(timeIntervalSince1970: 1_707_000_000),
+            noteText: "Leg day + extra carbs",
+            source: .manual
+        )
+        source.addStandaloneNote(text: "Hydration was lower than usual")
+
+        let sqliteData = source.exportSQLite()
+        XCTAssertFalse(sqliteData.isEmpty)
+
+        let importURL = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("weighin-import-\(UUID().uuidString).sqlite")
+        defer { try? FileManager.default.removeItem(at: importURL) }
+        try sqliteData.write(to: importURL)
+
+        let destination = try TestSupport.makeRepository()
+        destination.importSQLite(from: importURL)
+
+        XCTAssertEqual(destination.logs.count, source.logs.count)
+        XCTAssertEqual(destination.notes.count, source.notes.count)
+        XCTAssertEqual(destination.logs.first?.weight, source.logs.first?.weight)
+    }
 }
