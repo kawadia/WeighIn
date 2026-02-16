@@ -143,7 +143,7 @@ struct LogView: View {
                 .font(.headline)
                 .foregroundStyle(AppTheme.textPrimary)
 
-            Text("How was yesterday? Sleep, food, exercise, stress, mood.")
+            Text("How was yesterday? Sleep, food, exercise, stress, mood, andy anything else.")
                 .font(.subheadline)
                 .foregroundStyle(AppTheme.textSecondary)
 
@@ -214,15 +214,17 @@ struct LogView: View {
                             .font(.headline)
                             .foregroundStyle(AppTheme.textPrimary)
 
-                            Text(log.source.rawValue.uppercased())
-                                .font(.caption2.weight(.bold))
-                                .foregroundStyle(AppTheme.textSecondary)
-                                .padding(.horizontal, 6)
-                                .padding(.vertical, 3)
-                                .background(
-                                    RoundedRectangle(cornerRadius: 6, style: .continuous)
-                                        .fill(AppTheme.accentMuted.opacity(0.35))
-                                )
+                            if log.source != .manual {
+                                Text(log.source.rawValue.uppercased())
+                                    .font(.caption2.weight(.bold))
+                                    .foregroundStyle(AppTheme.textSecondary)
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 3)
+                                    .background(
+                                        RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                            .fill(AppTheme.accentMuted.opacity(0.35))
+                                    )
+                            }
 
                             Spacer()
 
