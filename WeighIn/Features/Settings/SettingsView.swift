@@ -9,6 +9,7 @@ struct SettingsView: View {
     @State private var defaultUnit: WeightUnit = .lbs
     @State private var reminderEnabled = true
     @State private var reminderTime = Calendar.current.date(from: DateComponents(hour: 7, minute: 0)) ?? Date()
+    @State private var iCloudSyncEnabled = false
 
     @State private var birthday: Date?
     @State private var gender: Gender = .undisclosed
@@ -28,6 +29,7 @@ struct SettingsView: View {
             Form {
                 profileSection
                 preferencesSection
+                syncSection
                 dataSection
             }
             .scrollContentBackground(.hidden)
@@ -37,6 +39,7 @@ struct SettingsView: View {
             .onChange(of: defaultUnit) { _, _ in savePreferences() }
             .onChange(of: reminderEnabled) { _, _ in savePreferences() }
             .onChange(of: reminderTime) { _, _ in savePreferences() }
+            .onChange(of: iCloudSyncEnabled) { _, _ in savePreferences() }
             .onChange(of: gender) { _, _ in saveProfile() }
             .onChange(of: heightFeet) { _, _ in saveProfile() }
             .onChange(of: heightInches) { _, _ in saveProfile() }
@@ -165,6 +168,47 @@ struct SettingsView: View {
         }
     }
 
+    private var syncSection: some View {
+        Section("iCloud Sync") {
+            Toggle("Enable iCloud Sync", isOn: $iCloudSyncEnabled)
+
+            Text("Syncs your logs, notes, and profile across your devices using your private iCloud account.")
+                .font(.caption)
+                .foregroundStyle(AppTheme.textSecondary)
+
+            if repository.syncInProgress {
+                Label("Syncing…", systemImage: "arrow.triangle.2.circlepath")
+                    .foregroundStyle(AppTheme.textSecondary)
+            }
+
+            if let lastSyncAt = repository.settings.lastSyncAt {
+                Text("Last sync: \(DateFormatting.shortDateTime.string(from: lastSyncAt))")
+                    .font(.caption)
+                    .foregroundStyle(AppTheme.textSecondary)
+            } else {
+                Text("No successful sync yet.")
+                    .font(.caption)
+                    .foregroundStyle(AppTheme.textSecondary)
+            }
+
+            if let lastSyncError = repository.settings.lastSyncError,
+               !lastSyncError.isEmpty {
+                Text(lastSyncError)
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+            }
+
+            Button("Sync Now") {
+                repository.triggerSyncNow()
+            }
+            .disabled(!iCloudSyncEnabled || repository.syncInProgress)
+
+            Text("Requires an iCloud account signed into this device.")
+                .font(.caption2)
+                .foregroundStyle(AppTheme.textSecondary)
+        }
+    }
+
     @ViewBuilder
     private var avatarView: some View {
         if let avatarImage {
@@ -191,6 +235,7 @@ struct SettingsView: View {
             hour: repository.settings.reminderHour,
             minute: repository.settings.reminderMinute
         )) ?? Date()
+        iCloudSyncEnabled = repository.settings.iCloudSyncEnabled
 
         birthday = repository.profile.birthday
         gender = repository.profile.gender
@@ -218,7 +263,10 @@ struct SettingsView: View {
             reminderEnabled: reminderEnabled,
             reminderHour: hour,
             reminderMinute: minute,
-            hasCompletedOnboarding: repository.settings.hasCompletedOnboarding
+            hasCompletedOnboarding: repository.settings.hasCompletedOnboarding,
+            iCloudSyncEnabled: iCloudSyncEnabled,
+            lastSyncAt: repository.settings.lastSyncAt,
+            lastSyncError: repository.settings.lastSyncError
         )
 
         guard updated != repository.settings else { return }

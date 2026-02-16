@@ -7,12 +7,21 @@ final class AppRepository: ObservableObject {
     @Published var settings: AppSettings = .default
     @Published var profile: UserProfile = .empty
     @Published var lastErrorMessage: String?
+    @Published private(set) var syncInProgress = false
 
     private let store: SQLiteStore
+    private let syncService: CloudKitSyncService
+    private var shouldRunSyncAgain = false
+    private var forceNextSync = false
 
-    init(store: SQLiteStore = try! SQLiteStore()) {
+    init(
+        store: SQLiteStore = try! SQLiteStore(),
+        syncService: CloudKitSyncService = CloudKitSyncService()
+    ) {
         self.store = store
+        self.syncService = syncService
         loadAll()
+        queueSyncIfEnabled()
     }
 
     func loadAll() {
@@ -56,6 +65,7 @@ final class AppRepository: ObservableObject {
             )
             try store.insert(log)
             loadAll()
+            queueSyncIfEnabled()
         } catch {
             lastErrorMessage = "Could not save weight entry: \(error.localizedDescription)"
         }
@@ -68,6 +78,7 @@ final class AppRepository: ObservableObject {
         do {
             try store.insert(NoteEntry(timestamp: timestamp, text: trimmed))
             loadAll()
+            queueSyncIfEnabled()
         } catch {
             lastErrorMessage = "Could not save note: \(error.localizedDescription)"
         }
@@ -82,12 +93,14 @@ final class AppRepository: ObservableObject {
             if let id {
                 try store.update(NoteEntry(id: id, timestamp: timestamp, text: trimmed))
                 loadAll()
+                queueSyncIfEnabled()
                 return id
             }
 
             let note = NoteEntry(timestamp: timestamp, text: trimmed)
             try store.insert(note)
             loadAll()
+            queueSyncIfEnabled()
             return note.id
         } catch {
             lastErrorMessage = "Could not save note: \(error.localizedDescription)"
@@ -131,6 +144,7 @@ final class AppRepository: ObservableObject {
             )
             try store.update(updated)
             loadAll()
+            queueSyncIfEnabled()
         } catch {
             lastErrorMessage = "Could not update entry: \(error.localizedDescription)"
         }
@@ -143,6 +157,7 @@ final class AppRepository: ObservableObject {
             }
             try store.deleteWeightLog(id: log.id)
             loadAll()
+            queueSyncIfEnabled()
         } catch {
             lastErrorMessage = "Could not delete entry: \(error.localizedDescription)"
         }
@@ -157,6 +172,7 @@ final class AppRepository: ObservableObject {
                 hour: updated.reminderHour,
                 minute: updated.reminderMinute
             )
+            queueSyncIfEnabled()
         } catch {
             lastErrorMessage = "Could not save settings: \(error.localizedDescription)"
         }
@@ -171,9 +187,14 @@ final class AppRepository: ObservableObject {
         do {
             try store.upsert(profile: updated)
             profile = updated
+            queueSyncIfEnabled()
         } catch {
             lastErrorMessage = "Could not save profile: \(error.localizedDescription)"
         }
+    }
+
+    func triggerSyncNow() {
+        queueSyncIfEnabled(force: true)
     }
 
     func importCSV(from data: Data) {
@@ -267,6 +288,82 @@ final class AppRepository: ObservableObject {
             values.append((sorted[index].timestamp, average))
         }
         return values
+    }
+
+    private func queueSyncIfEnabled(force: Bool = false) {
+        guard settings.iCloudSyncEnabled else { return }
+
+        if syncInProgress {
+            shouldRunSyncAgain = true
+            forceNextSync = forceNextSync || force
+            return
+        }
+
+        syncInProgress = true
+        shouldRunSyncAgain = false
+        forceNextSync = force
+
+        Task { [weak self] in
+            await self?.runSyncLoop()
+        }
+    }
+
+    private func runSyncLoop() async {
+        defer { syncInProgress = false }
+
+        var firstPass = true
+        while settings.iCloudSyncEnabled {
+            let forceThisPass = forceNextSync
+            forceNextSync = false
+
+            if !firstPass && !shouldRunSyncAgain {
+                break
+            }
+
+            shouldRunSyncAgain = false
+            firstPass = false
+
+            do {
+                let snapshot = try buildSyncSnapshot()
+                if !forceThisPass,
+                   snapshot.pendingNotes.isEmpty,
+                   snapshot.pendingWeightLogs.isEmpty,
+                   snapshot.lastSyncAt != nil {
+                    break
+                }
+
+                let result = try await syncService.sync(snapshot: snapshot)
+                try store.markNoteRecordsSynced(ids: result.syncedNoteIDs)
+                try store.markWeightRecordsSynced(ids: result.syncedWeightIDs)
+                try store.applyRemotePullPayload(result.pullPayload)
+                try store.updateSyncStatus(lastSyncAt: result.syncedAt, lastSyncError: nil)
+                loadAll()
+            } catch {
+                let message = syncErrorMessage(error)
+                try? store.updateSyncStatus(lastSyncAt: settings.lastSyncAt, lastSyncError: message)
+                loadAll()
+                break
+            }
+        }
+    }
+
+    private func buildSyncSnapshot() throws -> SyncSnapshot {
+        let currentSettings = try store.fetchSettings()
+        return SyncSnapshot(
+            pendingNotes: try store.fetchPendingNoteRecords(),
+            pendingWeightLogs: try store.fetchPendingWeightRecords(),
+            profile: try store.fetchSyncProfileRecord(),
+            settings: try store.fetchSyncSettingsRecord(),
+            lastSyncAt: currentSettings.lastSyncAt
+        )
+    }
+
+    private func syncErrorMessage(_ error: Error) -> String {
+        if let syncError = error as? CloudKitSyncService.SyncError,
+           let description = syncError.errorDescription {
+            return description
+        }
+        return error.localizedDescription
     }
 }
 

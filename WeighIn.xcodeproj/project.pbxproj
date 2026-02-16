@@ -26,6 +26,8 @@
 		AA0000000000000000000210 /* PastEntrySheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000110 /* PastEntrySheet.swift */; };
 		AA0000000000000000000211 /* ChartsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000111 /* ChartsView.swift */; };
 		AA0000000000000000000212 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000112 /* SettingsView.swift */; };
+		AA0000000000000000000213 /* SyncModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000113 /* SyncModels.swift */; };
+		AA0000000000000000000214 /* CloudKitSyncService.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000114 /* CloudKitSyncService.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -49,6 +51,8 @@
 		AA0000000000000000000110 /* PastEntrySheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PastEntrySheet.swift; sourceTree = "<group>"; };
 		AA0000000000000000000111 /* ChartsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChartsView.swift; sourceTree = "<group>"; };
 		AA0000000000000000000112 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		AA0000000000000000000113 /* SyncModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncModels.swift; sourceTree = "<group>"; };
+		AA0000000000000000000114 /* CloudKitSyncService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudKitSyncService.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -111,6 +115,8 @@
 				AA000000000000000000010A /* CSVCodec.swift */,
 				AA000000000000000000010B /* NotificationScheduler.swift */,
 				AA000000000000000000010C /* SQLiteStore.swift */,
+				AA0000000000000000000113 /* SyncModels.swift */,
+				AA0000000000000000000114 /* CloudKitSyncService.swift */,
 			);
 			path = Data;
 			sourceTree = "<group>";
@@ -246,6 +252,8 @@
 				AA0000000000000000000210 /* PastEntrySheet.swift in Sources */,
 				AA0000000000000000000211 /* ChartsView.swift in Sources */,
 				AA0000000000000000000212 /* SettingsView.swift in Sources */,
+				AA0000000000000000000213 /* SyncModels.swift in Sources */,
+				AA0000000000000000000214 /* CloudKitSyncService.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

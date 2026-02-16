@@ -102,7 +102,7 @@ private struct OnboardingSheet: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section("Welcome to Weight & Reflect") {
+                Section("Welcome to Weigh & Reflect") {
                     Text("Quick setup before your first log.")
                         .foregroundStyle(AppTheme.textSecondary)
                 }
@@ -161,7 +161,10 @@ private struct OnboardingSheet: View {
             reminderEnabled: reminderEnabled,
             reminderHour: parts.hour ?? 7,
             reminderMinute: parts.minute ?? 0,
-            hasCompletedOnboarding: true
+            hasCompletedOnboarding: true,
+            iCloudSyncEnabled: settings.iCloudSyncEnabled,
+            lastSyncAt: settings.lastSyncAt,
+            lastSyncError: settings.lastSyncError
         )
 
         let feet = Int(heightFeet) ?? 0
