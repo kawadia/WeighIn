@@ -48,7 +48,7 @@ struct LogView: View {
 
     private var titleBar: some View {
         HStack {
-            Text("Weight & Reflect")
+            Text("Weigh & Reflect")
                 .font(.system(size: 28, weight: .bold, design: .rounded))
                 .foregroundStyle(AppTheme.textPrimary)
             Spacer()
