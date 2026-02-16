@@ -103,6 +103,39 @@ final class AppRepositoryTests: XCTestCase {
         XCTAssertEqual(repository.notes.count, 0)
     }
 
+    func testDeleteAllDataClearsEntriesAndResetsProfileAndSettings() throws {
+        let repository = try TestSupport.makeRepository()
+
+        repository.addWeightLog(
+            weight: 175.0,
+            timestamp: Date(),
+            noteText: "Will be deleted",
+            source: .manual
+        )
+        repository.updateProfile(
+            UserProfile(
+                birthday: Date(timeIntervalSince1970: 1_000_000_000),
+                gender: .female,
+                heightCentimeters: 168.0,
+                avatarPath: "avatar.jpg"
+            )
+        )
+        var updatedSettings = repository.settings
+        updatedSettings.defaultUnit = .kg
+        updatedSettings.reminderEnabled = false
+        repository.updateSettings(updatedSettings)
+
+        repository.deleteAllData()
+
+        XCTAssertTrue(repository.logs.isEmpty)
+        XCTAssertTrue(repository.notes.isEmpty)
+        XCTAssertEqual(repository.profile, .empty)
+        XCTAssertEqual(repository.settings.defaultUnit, .lbs)
+        XCTAssertTrue(repository.settings.reminderEnabled)
+        XCTAssertEqual(repository.settings.reminderHour, 7)
+        XCTAssertEqual(repository.settings.reminderMinute, 0)
+    }
+
     func testChartsCalculationsFilterConvertAndAverage() throws {
         let repository = try TestSupport.makeRepository()
 
@@ -346,6 +379,35 @@ final class AppRepositoryTests: XCTestCase {
 
         let kgLog = try XCTUnwrap(repository.logs.first(where: { $0.unit == .kg }))
         XCTAssertEqual(kgLog.weight, 90.1, accuracy: 0.0001)
+    }
+
+    func testAppleHealthImportSummaryReturnsProcessedAndNewCounts() throws {
+        let repository = try TestSupport.makeRepository()
+
+        let xml = """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <HealthData locale="en_US">
+          <Record type="HKQuantityTypeIdentifierBodyMass" sourceName="Health" unit="lb" creationDate="2024-01-02 07:00:00 -0800" startDate="2024-01-02 07:00:00 -0800" endDate="2024-01-02 07:00:00 -0800" value="200.5"/>
+          <Record type="HKQuantityTypeIdentifierBodyMass" sourceName="Scale App" unit="kg" creationDate="2024-01-03 08:30:00 +0000" startDate="2024-01-03 08:30:00 +0000" endDate="2024-01-03 08:30:00 +0000" value="90.1"/>
+        </HealthData>
+        """
+        let zipData = makeStoredZIP(
+            entries: [
+                (name: "apple_health_export/export.xml", data: Data(xml.utf8))
+            ]
+        )
+        let zipURL = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("health-summary-\(UUID().uuidString).zip")
+        defer { try? FileManager.default.removeItem(at: zipURL) }
+        try zipData.write(to: zipURL)
+
+        let firstSummary = repository.importAppleHealthZIP(from: zipURL)
+        let secondSummary = repository.importAppleHealthZIP(from: zipURL)
+
+        XCTAssertEqual(firstSummary?.processedRecords, 2)
+        XCTAssertEqual(firstSummary?.newRecords, 2)
+        XCTAssertEqual(secondSummary?.processedRecords, 2)
+        XCTAssertEqual(secondSummary?.newRecords, 0)
     }
 
     func testAppleHealthFolderImportReadsBodyMassFromExportXML() throws {

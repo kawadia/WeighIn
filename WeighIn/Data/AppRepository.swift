@@ -396,10 +396,13 @@ final class AppRepository: ObservableObject {
         }
     }
 
-    func importAppleHealthZIP(from url: URL) {
+    @discardableResult
+    func importAppleHealthZIP(from url: URL) -> AppleHealthImportSummary? {
         do {
             let rows = try AppleHealthImport.parseBodyMassRows(fromExportAt: url)
             var seenRowIDs: Set<String> = []
+            var knownLogIDs = Set(logs.map(\.id))
+            var newRecords = 0
 
             for row in rows {
                 let key = healthRowKey(
@@ -418,13 +421,21 @@ final class AppRepository: ObservableObject {
                     source: .health,
                     noteID: nil
                 )
+                if knownLogIDs.insert(log.id).inserted {
+                    newRecords += 1
+                }
                 try store.insert(log)
             }
 
             loadAll()
             queueSyncIfEnabled()
+            return AppleHealthImportSummary(
+                processedRecords: seenRowIDs.count,
+                newRecords: newRecords
+            )
         } catch {
             lastErrorMessage = "Apple Health import failed: \(error.localizedDescription)"
+            return nil
         }
     }
 
@@ -460,6 +471,15 @@ final class AppRepository: ObservableObject {
         } catch {
             lastErrorMessage = "Could not export SQLite: \(error.localizedDescription)"
             return Data()
+        }
+    }
+
+    func deleteAllData() {
+        do {
+            try store.deleteAllData()
+            loadAll()
+        } catch {
+            lastErrorMessage = "Could not delete all data: \(error.localizedDescription)"
         }
     }
 
@@ -751,6 +771,11 @@ private struct ExportPayload: Codable {
     let profile: UserProfile
     let logs: [WeightLog]
     let notes: [NoteEntry]
+}
+
+struct AppleHealthImportSummary: Equatable {
+    let processedRecords: Int
+    let newRecords: Int
 }
 
 private struct AppleHealthBodyMassRow {

@@ -29,6 +29,8 @@ struct SettingsView: View {
     @State private var showBackupRestoreImporter = false
     @State private var showAppleHealthImportPicker = false
     @State private var iCloudBackupEnabled = false
+    @State private var appleHealthImportMessage: String?
+    @State private var showDeleteAllDataConfirmation = false
 
     var body: some View {
         NavigationStack {
@@ -38,6 +40,7 @@ struct SettingsView: View {
                 dataSection
                 backupSection
                 legalSection
+                dangerZoneSection
             }
             .scrollContentBackground(.hidden)
             .background(AppTheme.background)
@@ -113,6 +116,24 @@ struct SettingsView: View {
                         showExporter = true
                     }
                 }
+            }
+            .alert("Apple Health Import Complete", isPresented: Binding(
+                get: { appleHealthImportMessage != nil },
+                set: { isPresented in
+                    if !isPresented {
+                        appleHealthImportMessage = nil
+                    }
+                }
+            )) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(appleHealthImportMessage ?? "")
+            }
+            .confirmationDialog("Delete all app data on this device?", isPresented: $showDeleteAllDataConfirmation, titleVisibility: .visible) {
+                Button("Delete All Data", role: .destructive) {
+                    repository.deleteAllData()
+                }
+                Button("Cancel", role: .cancel) {}
             }
         }
     }
@@ -198,6 +219,18 @@ struct SettingsView: View {
                     Label("Privacy Policy", systemImage: "doc.text")
                 }
             }
+        }
+    }
+
+    private var dangerZoneSection: some View {
+        Section("Danger Zone") {
+            Button("Delete All Data", role: .destructive) {
+                showDeleteAllDataConfirmation = true
+            }
+
+            Text("This action cannot be undone.")
+                .font(.caption2)
+                .foregroundStyle(AppTheme.textSecondary)
         }
     }
 
@@ -414,7 +447,9 @@ struct SettingsView: View {
             case .sqlite:
                 repository.importSQLite(from: url)
             case .appleHealthZip:
-                repository.importAppleHealthZIP(from: url)
+                if let summary = repository.importAppleHealthZIP(from: url) {
+                    appleHealthImportMessage = "Processed \(summary.processedRecords) records. Added \(summary.newRecords) new entries."
+                }
             }
         } catch {
             repository.lastErrorMessage = "Unable to read \(format.label): \(error.localizedDescription)"

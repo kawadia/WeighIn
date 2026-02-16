@@ -231,6 +231,13 @@ final class SQLiteStore {
         }
     }
 
+    func deleteAllData() throws {
+        try execute("DELETE FROM weight_logs;")
+        try execute("DELETE FROM notes;")
+        try upsert(settings: .default)
+        try upsert(profile: .empty)
+    }
+
     func fetchNotes() throws -> [NoteEntry] {
         try query(
             sql: """

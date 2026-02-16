@@ -25,6 +25,7 @@ struct ChartsView: View {
         let unit = repository.settings.defaultUnit
         let maxZoom = maxZoomDays(for: filteredLogs)
         let sliderUpperBound = max(maxZoom, 8)
+        let yAxisDomain = yAxisDomain(for: filteredLogs, movingAverage: movingAverage, includeTrend: showTrend)
 
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
@@ -83,10 +84,11 @@ struct ChartsView: View {
                             .foregroundStyle(AppTheme.textSecondary)
                     }
                 }
-                .frame(height: 300)
+                .frame(height: 340)
                 .chartScrollableAxes(.horizontal)
                 .chartXVisibleDomain(length: zoomDomainLength)
                 .chartScrollPosition(x: $scrollPosition)
+                .chartYScale(domain: yAxisDomain)
                 .chartOverlay { proxy in
                     GeometryReader { geometry in
                         Rectangle()
@@ -280,7 +282,7 @@ struct ChartsView: View {
         if !voiceModel.lastSaveMessage.isEmpty {
             return voiceModel.lastSaveMessage
         }
-        return "Tap any point to edit note context. Scroll and zoom to browse history. Leave note empty and save to remove."
+        return "Tap any point to edit note context. Scroll and zoom to browse history."
     }
 
     private var zoomDomainLength: TimeInterval {
@@ -356,6 +358,25 @@ struct ChartsView: View {
         }
         let span = max(7, ceil(last.timeIntervalSince(first) / 86_400))
         return min(3650, max(8, span))
+    }
+
+    private func yAxisDomain(
+        for logs: [WeightLog],
+        movingAverage: [(Date, Double)],
+        includeTrend: Bool
+    ) -> ClosedRange<Double> {
+        var values = logs.map { repository.convertedWeight($0, to: repository.settings.defaultUnit) }
+        if includeTrend {
+            values.append(contentsOf: movingAverage.map(\.1))
+        }
+
+        guard let minimum = values.min(), let maximum = values.max() else {
+            return 0...1
+        }
+
+        let span = max(maximum - minimum, 0.2)
+        let padding = max(span * 0.15, 0.3)
+        return (minimum - padding)...(maximum + padding)
     }
 
     private func smoothedSeries(from logs: [WeightLog]) -> [(timestamp: Date, weight: Double)] {
