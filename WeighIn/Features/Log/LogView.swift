@@ -177,8 +177,8 @@ struct LogView: View {
                         .background(AppTheme.accent)
                         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                 }
-                .disabled(model.noteInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                .opacity(model.noteInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? 0.4 : 1)
+                .disabled(!model.canSaveNote)
+                .opacity(model.canSaveNote ? 1 : 0.4)
             }
         }
         .frame(minHeight: height, alignment: .top)

@@ -8,9 +8,15 @@ final class LogViewModel: ObservableObject {
     @Published var lastSaveMessage = ""
 
     private var lastSavedNoteID: String?
+    private var lastSavedNormalizedNoteText = ""
 
     var parsedWeight: Double? {
         Double(weightInput)
+    }
+
+    var canSaveNote: Bool {
+        let normalized = noteInput.trimmingCharacters(in: .whitespacesAndNewlines)
+        return !normalized.isEmpty && normalized != lastSavedNormalizedNoteText
     }
 
     func handleKey(_ key: String) {
@@ -47,12 +53,22 @@ final class LogViewModel: ObservableObject {
     }
 
     func saveNoteNow(using repository: AppRepository) {
+        let normalized = noteInput.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalized.isEmpty else { return }
+
+        guard normalized != lastSavedNormalizedNoteText else {
+            lastSaveMessage = "No changes to save"
+            return
+        }
+
         lastSavedNoteID = repository.upsertStandaloneNote(
             id: lastSavedNoteID,
-            text: noteInput,
+            text: normalized,
             timestamp: Date()
         )
-        if !noteInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+
+        if lastSavedNoteID != nil {
+            lastSavedNormalizedNoteText = normalized
             lastSaveMessage = "Saved \(DateFormatting.shortDateTime.string(from: Date()))"
         }
     }
