@@ -73,6 +73,28 @@ final class AppRepository: ObservableObject {
         }
     }
 
+    @discardableResult
+    func upsertStandaloneNote(id: String?, text: String, timestamp: Date = Date()) -> String? {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return id }
+
+        do {
+            if let id {
+                try store.update(NoteEntry(id: id, timestamp: timestamp, text: trimmed))
+                loadAll()
+                return id
+            }
+
+            let note = NoteEntry(timestamp: timestamp, text: trimmed)
+            try store.insert(note)
+            loadAll()
+            return note.id
+        } catch {
+            lastErrorMessage = "Could not autosave note: \(error.localizedDescription)"
+            return id
+        }
+    }
+
     func updateWeightLog(
         _ original: WeightLog,
         weight: Double,

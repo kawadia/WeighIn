@@ -6,7 +6,7 @@ enum WeightUnit: String, CaseIterable, Codable {
 
     var label: String {
         switch self {
-        case .lbs: return "lb"
+        case .lbs: return "lbs"
         case .kg: return "kg"
         }
     }

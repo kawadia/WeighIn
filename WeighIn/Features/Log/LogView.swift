@@ -7,21 +7,20 @@ struct LogView: View {
     @State private var pendingDeleteLog: WeightLog?
 
     var body: some View {
-        ScrollView {
-            VStack(spacing: 20) {
-                header
-                keypadSection
-                recentLogsSection
-                notesSection
-                actionSection
+        GeometryReader { geometry in
+            ScrollView {
+                VStack(spacing: 14) {
+                    titleBar
+                    weightEntrySection(height: max(290, geometry.size.height * 0.46))
+                    notesSection(height: max(290, geometry.size.height * 0.46))
+                    recentLogsSection
+                }
+                .padding(.horizontal, 16)
+                .padding(.top, 10)
+                .padding(.bottom, 24)
             }
-            .padding(16)
         }
         .background(AppTheme.background.ignoresSafeArea())
-        .sheet(isPresented: $model.showingPastEntry) {
-            PastEntrySheet()
-                .environmentObject(repository)
-        }
         .sheet(item: $editingLog) { log in
             EditLogSheet(log: log)
                 .environmentObject(repository)
@@ -47,61 +46,132 @@ struct LogView: View {
         }
     }
 
-    private var header: some View {
-        VStack(spacing: 8) {
-            Text(DateFormatting.shortDate.string(from: Date()))
-                .font(.subheadline)
-                .foregroundStyle(AppTheme.textSecondary)
-
-            Text(weightDisplay)
-                .font(.system(size: 56, weight: .bold, design: .rounded))
+    private var titleBar: some View {
+        HStack {
+            Text("WeighIn")
+                .font(.system(size: 28, weight: .bold, design: .rounded))
                 .foregroundStyle(AppTheme.textPrimary)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 20)
+            Spacer()
+        }
+    }
+
+    private func weightEntrySection(height: CGFloat) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 8) {
+                HStack(spacing: 6) {
+                    Image(systemName: "calendar")
+                        .foregroundStyle(AppTheme.textSecondary)
+                    DatePicker(
+                        "",
+                        selection: $model.entryTimestamp,
+                        displayedComponents: .date
+                    )
+                    .labelsHidden()
+                    .datePickerStyle(.compact)
+                    .tint(AppTheme.textPrimary)
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
                 .background(
-                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
                         .fill(AppTheme.surface)
                 )
 
-            Button {
-                model.saveCurrent(using: repository)
-            } label: {
-                Text("Save Now")
-                    .font(.headline)
-                    .foregroundStyle(.black)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 14)
-                    .background(AppTheme.accent)
-                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                HStack(spacing: 6) {
+                    Image(systemName: "clock")
+                        .foregroundStyle(AppTheme.textSecondary)
+                    DatePicker(
+                        "",
+                        selection: $model.entryTimestamp,
+                        displayedComponents: .hourAndMinute
+                    )
+                    .labelsHidden()
+                    .datePickerStyle(.compact)
+                    .tint(AppTheme.textPrimary)
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(AppTheme.surface)
+                )
+
+                Spacer()
+
+                Button("Now") {
+                    model.entryTimestamp = Date()
+                }
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(AppTheme.accent)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .fill(AppTheme.accentMuted.opacity(0.2))
+                )
             }
-            .disabled(model.parsedWeight == nil)
-            .opacity(model.parsedWeight == nil ? 0.4 : 1)
+
+            HStack(spacing: 12) {
+                Text(weightDisplay)
+                    .font(.system(size: 48, weight: .bold, design: .rounded))
+                    .foregroundStyle(AppTheme.textPrimary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 12)
+                    .background(
+                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            .fill(AppTheme.surface)
+                    )
+
+                Button {
+                    model.saveCurrentWeight(using: repository)
+                } label: {
+                    Text("Save")
+                        .font(.headline)
+                        .foregroundStyle(.black)
+                        .frame(width: 96, height: 72)
+                        .background(AppTheme.accent)
+                        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                }
+                .disabled(model.parsedWeight == nil)
+                .opacity(model.parsedWeight == nil ? 0.4 : 1)
+            }
+
+            NumericKeypad { key in
+                model.handleKey(key)
+            }
+            .padding(12)
+            .background(
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .fill(Color.black.opacity(0.25))
+            )
         }
+        .frame(minHeight: height, alignment: .top)
     }
 
-    private var keypadSection: some View {
-        NumericKeypad { key in
-            model.handleKey(key)
-        }
-        .padding(14)
-        .background(
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .fill(Color.black.opacity(0.25))
-        )
-    }
-
-    private var notesSection: some View {
+    private func notesSection(height: CGFloat) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Notes")
-                .font(.headline)
-                .foregroundStyle(AppTheme.textPrimary)
+            HStack {
+                Text("Notes")
+                    .font(.headline)
+                    .foregroundStyle(AppTheme.textPrimary)
+
+                Spacer()
+
+                Toggle("Autosave", isOn: $model.autosaveNotes)
+                    .labelsHidden()
+                    .tint(AppTheme.accent)
+                Text("Autosave")
+                    .font(.caption)
+                    .foregroundStyle(AppTheme.textSecondary)
+            }
 
             Text("How was yesterday? Sleep, food, exercise, stress, mood.")
                 .font(.subheadline)
                 .foregroundStyle(AppTheme.textSecondary)
 
             TextEditor(text: $model.noteInput)
-                .frame(minHeight: 130)
+                .frame(minHeight: 190)
                 .padding(10)
                 .background(
                     RoundedRectangle(cornerRadius: 16, style: .continuous)
@@ -111,6 +181,28 @@ struct LogView: View {
                     RoundedRectangle(cornerRadius: 16, style: .continuous)
                         .stroke(AppTheme.accentMuted.opacity(0.5), lineWidth: 1)
                 )
+
+            HStack {
+                Text(model.lastAutosaveMessage)
+                    .font(.caption)
+                    .foregroundStyle(AppTheme.textSecondary)
+
+                Spacer()
+
+                Button("Save Note") {
+                    model.saveNoteNow(using: repository)
+                }
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(AppTheme.accent)
+                .disabled(model.noteInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+        }
+        .frame(minHeight: height, alignment: .top)
+        .onChange(of: model.noteInput) { _, _ in
+            model.noteChanged(using: repository)
+        }
+        .onChange(of: model.autosaveNotes) { _, _ in
+            model.autosaveSettingChanged(using: repository)
         }
     }
 
@@ -188,48 +280,6 @@ struct LogView: View {
                             .fill(AppTheme.surface)
                     )
                 }
-            }
-        }
-    }
-
-    private var actionSection: some View {
-        VStack(spacing: 10) {
-            Button {
-                model.saveCurrent(using: repository)
-            } label: {
-                Text("Save Weight + Note")
-                    .font(.headline)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 12)
-                    .background(AppTheme.surface)
-                    .foregroundStyle(AppTheme.textPrimary)
-                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-            }
-            .disabled(model.parsedWeight == nil)
-
-            Button {
-                model.saveNoteOnly(using: repository)
-            } label: {
-                Text("Save Note Only")
-                    .font(.headline)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 12)
-                    .background(AppTheme.surface)
-                    .foregroundStyle(AppTheme.textPrimary)
-                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-            }
-            .disabled(model.noteInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-
-            Button {
-                model.showingPastEntry = true
-            } label: {
-                Text("Log Past Entry")
-                    .font(.headline)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 12)
-                    .background(AppTheme.accentMuted)
-                    .foregroundStyle(AppTheme.textPrimary)
-                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
             }
         }
     }
