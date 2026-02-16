@@ -201,7 +201,7 @@ struct LogView: View {
                             .fill(AppTheme.surface)
                     )
             } else {
-                ForEach(Array(repository.logs.prefix(8))) { log in
+                ForEach(Array(repository.logs.prefix(5))) { log in
                     VStack(alignment: .leading, spacing: 6) {
                         HStack(spacing: 8) {
                             Text(
