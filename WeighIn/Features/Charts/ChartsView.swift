@@ -48,13 +48,13 @@ struct ChartsView: View {
                 }
 
                 Chart {
-                    ForEach(plottedSeries, id: \.timestamp) { point in
+                    ForEach(Array(plottedSeries.enumerated()), id: \.offset) { _, point in
                         LineMark(
                             x: .value("Date", point.timestamp),
                             y: .value("Weight", point.weight)
                         )
                         .foregroundStyle(AppTheme.accent)
-                        .interpolationMethod(.catmullRom)
+                        .interpolationMethod(.monotone)
                     }
 
                     if canShowPoints {
@@ -68,14 +68,14 @@ struct ChartsView: View {
                     }
 
                     if showTrend {
-                        ForEach(movingAverage, id: \.0) { entry in
+                        ForEach(Array(movingAverage.enumerated()), id: \.offset) { _, entry in
                             LineMark(
                                 x: .value("Date", entry.0),
                                 y: .value("7d avg", entry.1)
                             )
                             .foregroundStyle(AppTheme.textSecondary)
                             .lineStyle(StrokeStyle(lineWidth: 2, dash: [4, 5]))
-                            .interpolationMethod(.catmullRom)
+                            .interpolationMethod(.monotone)
                         }
                     }
 
