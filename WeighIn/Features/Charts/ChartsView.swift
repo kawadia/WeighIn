@@ -1,9 +1,42 @@
 import SwiftUI
 import Charts
-import UniformTypeIdentifiers
+
+@MainActor
+final class ChartsViewModel: ObservableObject {
+    private let chartsUseCase: any ChartsUseCase
+
+    init(chartsUseCase: any ChartsUseCase) {
+        self.chartsUseCase = chartsUseCase
+    }
+
+    var defaultUnit: WeightUnit {
+        chartsUseCase.settings.defaultUnit
+    }
+
+    func logs(in range: ChartRange) -> [WeightLog] {
+        chartsUseCase.logs(in: range)
+    }
+
+    func movingAverage(for input: [WeightLog], window: Int) -> [(Date, Double)] {
+        chartsUseCase.movingAverage(for: input, window: window)
+    }
+
+    func convertedWeight(_ log: WeightLog, to unit: WeightUnit) -> Double {
+        chartsUseCase.convertedWeight(log, to: unit)
+    }
+
+    func note(for log: WeightLog) -> NoteEntry? {
+        chartsUseCase.note(for: log)
+    }
+
+    func updateWeightLog(_ log: WeightLog, weight: Double, timestamp: Date, noteText: String) {
+        chartsUseCase.updateWeightLog(log, weight: weight, timestamp: timestamp, noteText: noteText)
+    }
+}
 
 struct ChartsView: View {
     @EnvironmentObject private var repository: AppRepository
+    @StateObject private var viewModel: ChartsViewModel
     @StateObject private var voiceModel = LogViewModel(shouldPersistDraft: false)
 
     @State private var range: ChartRange = .month
@@ -17,12 +50,17 @@ struct ChartsView: View {
     @State private var scrollPosition: Date = Date()
     @FocusState private var noteFocused: Bool
 
+    init(useCase: any ChartsUseCase) {
+        _viewModel = StateObject(wrappedValue: ChartsViewModel(chartsUseCase: useCase))
+    }
+
     var body: some View {
-        let filteredLogs = repository.logs(in: range).sorted(by: { $0.timestamp < $1.timestamp })
-        let movingAverage = repository.movingAverage(for: filteredLogs, window: 7)
+        let _ = repository.logs.count
+        let filteredLogs = viewModel.logs(in: range).sorted(by: { $0.timestamp < $1.timestamp })
+        let movingAverage = viewModel.movingAverage(for: filteredLogs, window: 7)
         let plottedSeries = smoothedSeries(from: filteredLogs)
         let canShowPoints = zoomDays <= 120
-        let unit = repository.settings.defaultUnit
+        let unit = viewModel.defaultUnit
         let maxZoom = maxZoomDays(for: filteredLogs)
         let sliderUpperBound = max(maxZoom, 8)
         let yAxisDomain = yAxisDomain(for: filteredLogs, movingAverage: movingAverage, includeTrend: showTrend)
@@ -61,7 +99,7 @@ struct ChartsView: View {
                         ForEach(filteredLogs) { log in
                             PointMark(
                                 x: .value("Date", log.timestamp),
-                                y: .value("Weight", repository.convertedWeight(log, to: unit))
+                                y: .value("Weight", viewModel.convertedWeight(log, to: unit))
                             )
                             .foregroundStyle(AppTheme.accent)
                         }
@@ -133,12 +171,12 @@ struct ChartsView: View {
 
                 if let selected = selectedLog(in: filteredLogs) {
                     VStack(alignment: .leading, spacing: 6) {
-                        let existingNoteText = repository.note(for: selected)?
+                        let existingNoteText = viewModel.note(for: selected)?
                             .text
                             .trimmingCharacters(in: .whitespacesAndNewlines)
 
                         HStack(alignment: .firstTextBaseline, spacing: 8) {
-                            Text(String(format: "%.1f %@", repository.convertedWeight(selected, to: unit), unit.label))
+                            Text(String(format: "%.1f %@", viewModel.convertedWeight(selected, to: unit), unit.label))
                                 .font(.title3.bold())
                                 .foregroundStyle(AppTheme.accent)
 
@@ -319,17 +357,17 @@ struct ChartsView: View {
 
         if selectedLogID != nearest.id {
             selectedLogID = nearest.id
-            noteDraft = repository.note(for: nearest)?.text ?? ""
+            noteDraft = viewModel.note(for: nearest)?.text ?? ""
             voiceModel.noteInput = noteDraft
             noteSaveMessage = nil
-            let existing = repository.note(for: nearest)?.text.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            let existing = viewModel.note(for: nearest)?.text.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
             isEditingSelectedNote = existing.isEmpty
         }
     }
 
     private func saveNote(for log: WeightLog) {
         let trimmed = noteDraft.trimmingCharacters(in: .whitespacesAndNewlines)
-        repository.updateWeightLog(log, weight: log.weight, timestamp: log.timestamp, noteText: trimmed)
+        viewModel.updateWeightLog(log, weight: log.weight, timestamp: log.timestamp, noteText: trimmed)
         noteSaveMessage = trimmed.isEmpty ? "Note removed." : "Note saved."
         isEditingSelectedNote = trimmed.isEmpty
         noteFocused = false
@@ -365,7 +403,7 @@ struct ChartsView: View {
         movingAverage: [(Date, Double)],
         includeTrend: Bool
     ) -> ClosedRange<Double> {
-        var values = logs.map { repository.convertedWeight($0, to: repository.settings.defaultUnit) }
+        var values = logs.map { viewModel.convertedWeight($0, to: viewModel.defaultUnit) }
         if includeTrend {
             values.append(contentsOf: movingAverage.map(\.1))
         }
@@ -383,7 +421,7 @@ struct ChartsView: View {
         guard !logs.isEmpty else { return [] }
 
         if zoomDays <= 120 {
-            return logs.map { ($0.timestamp, repository.convertedWeight($0, to: repository.settings.defaultUnit)) }
+            return logs.map { ($0.timestamp, viewModel.convertedWeight($0, to: viewModel.defaultUnit)) }
         }
 
         if zoomDays <= 730 {
@@ -413,7 +451,7 @@ struct ChartsView: View {
 
         for log in logs {
             let key = calendar.dateComponents(components, from: log.timestamp)
-            buckets[key, default: []].append(repository.convertedWeight(log, to: repository.settings.defaultUnit))
+            buckets[key, default: []].append(viewModel.convertedWeight(log, to: viewModel.defaultUnit))
         }
 
         let mapped: [(Date, Double)] = buckets.compactMap { key, values in
@@ -445,85 +483,5 @@ struct ChartsView: View {
                 day: 1
             ))
         }
-    }
-}
-
-struct AIAnalysisView: View {
-    @EnvironmentObject private var repository: AppRepository
-    @State private var showJSONExporter = false
-
-    var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                Text("AI Analysis")
-                    .font(.largeTitle.bold())
-                    .foregroundStyle(AppTheme.textPrimary)
-
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Coming Soon")
-                        .font(.headline)
-                        .foregroundStyle(AppTheme.textPrimary)
-
-                    Text("Deeper pattern analysis from your weight trajectory and reflections will appear here.")
-                        .font(.subheadline)
-                        .foregroundStyle(AppTheme.textSecondary)
-
-                    Text("Tip: Export JSON here (or from Settings) and upload it to your favorite AI chatbot for deep analysis of trends, notes, and correlations.")
-                        .font(.caption)
-                        .foregroundStyle(AppTheme.textSecondary)
-
-                    Text("JSON export includes your logs, linked notes, settings, and profile info.")
-                        .font(.caption)
-                        .foregroundStyle(AppTheme.textSecondary)
-                }
-                .padding()
-                .background(
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .fill(AppTheme.surface)
-                )
-
-                Button {
-                    showJSONExporter = true
-                } label: {
-                    Label("Export JSON", systemImage: "square.and.arrow.up")
-                        .font(.headline)
-                        .foregroundStyle(.black)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 12)
-                        .background(AppTheme.accent)
-                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                }
-            }
-            .padding(16)
-        }
-        .background(AppTheme.background.ignoresSafeArea())
-        .fileExporter(
-            isPresented: $showJSONExporter,
-            document: AIJSONExportDocument(data: repository.exportJSON()),
-            contentType: .json,
-            defaultFilename: "weighin-export"
-        ) { result in
-            if case let .failure(error) = result {
-                repository.lastErrorMessage = "Unable to export JSON: \(error.localizedDescription)"
-            }
-        }
-    }
-}
-
-private struct AIJSONExportDocument: FileDocument {
-    static var readableContentTypes: [UTType] { [.json] }
-
-    let data: Data
-
-    init(data: Data) {
-        self.data = data
-    }
-
-    init(configuration: ReadConfiguration) throws {
-        self.data = configuration.file.regularFileContents ?? Data()
-    }
-
-    func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
-        FileWrapper(regularFileWithContents: data)
     }
 }

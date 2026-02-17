@@ -1,9 +1,80 @@
 import Foundation
 import CryptoKit
-import zlib
 
 @MainActor
-final class AppRepository: ObservableObject {
+protocol LoggingUseCase: AnyObject {
+    var logs: [WeightLog] { get }
+    var notes: [NoteEntry] { get }
+    var settings: AppSettings { get }
+    var lastErrorMessage: String? { get set }
+
+    func addWeightLog(
+        weight: Double,
+        timestamp: Date,
+        unit: WeightUnit?,
+        noteText: String?,
+        source: WeightLogSource
+    )
+    func addStandaloneNote(text: String, timestamp: Date)
+    @discardableResult
+    func upsertStandaloneNote(id: String?, text: String, timestamp: Date) -> String?
+    func updateWeightLog(_ original: WeightLog, weight: Double, timestamp: Date, noteText: String)
+    func deleteWeightLog(_ log: WeightLog)
+    func note(for log: WeightLog) -> NoteEntry?
+    func convertedWeight(_ log: WeightLog, to unit: WeightUnit) -> Double
+}
+
+@MainActor
+protocol ChartsUseCase: AnyObject {
+    var settings: AppSettings { get }
+    func logs(in range: ChartRange) -> [WeightLog]
+    func movingAverage(for input: [WeightLog], window: Int) -> [(Date, Double)]
+    func convertedWeight(_ log: WeightLog, to unit: WeightUnit) -> Double
+    func note(for log: WeightLog) -> NoteEntry?
+    func updateWeightLog(_ original: WeightLog, weight: Double, timestamp: Date, noteText: String)
+}
+
+@MainActor
+protocol SettingsUseCase: AnyObject {
+    var settings: AppSettings { get }
+    var profile: UserProfile { get }
+    var lastErrorMessage: String? { get set }
+
+    var backupInProgress: Bool { get }
+    var iCloudBackupEnabled: Bool { get }
+    var lastBackupAt: Date? { get }
+    var lastBackupError: String? { get }
+
+    func updateSettings(_ updated: AppSettings)
+    func updateProfile(_ updated: UserProfile)
+    func completeOnboarding(with updatedSettings: AppSettings, profile updatedProfile: UserProfile)
+
+    func setICloudBackupEnabled(_ enabled: Bool)
+    func setBackupFolder(_ url: URL)
+    func clearBackupFolder()
+    func backupFolderDisplayName() -> String?
+    func triggerDailyBackupIfNeeded()
+    func triggerBackupNow()
+
+    func importCSV(from data: Data)
+    func importJSON(from data: Data)
+    func importSQLite(from url: URL)
+    @discardableResult
+    func importAppleHealthZIP(from url: URL) -> AppleHealthImportSummary?
+    func exportCSV() -> Data
+    func exportJSON() -> Data
+    func exportSQLite() -> Data
+    func deleteAllData()
+}
+
+@MainActor
+protocol AnalysisUseCase: AnyObject {
+    var lastErrorMessage: String? { get set }
+    func exportJSON() -> Data
+}
+
+@MainActor
+final class AppRepository: ObservableObject, LoggingUseCase, ChartsUseCase, SettingsUseCase, AnalysisUseCase {
     @Published private(set) var logs: [WeightLog] = []
     @Published private(set) var notes: [NoteEntry] = []
     @Published var settings: AppSettings = .default
@@ -16,21 +87,20 @@ final class AppRepository: ObservableObject {
     @Published private(set) var lastBackupAt: Date?
     @Published private(set) var lastBackupError: String?
 
-    private let store: SQLiteStore
-    private let syncService: CloudKitSyncService?
     private let cloudKitSyncFeatureEnabled: Bool
-    private let reminderScheduler: (Bool, Int, Int) -> Void
-    private let preferences: UserDefaults
-    private var shouldRunSyncAgain = false
-    private var forceNextSync = false
-    private var backupTask: Task<Void, Never>?
 
-    private enum BackupPreferencesKey {
-        static let enabled = "backup.enabled"
-        static let folderBookmarkData = "backup.folderBookmarkData"
-        static let lastBackupAt = "backup.lastBackupAt"
-        static let lastBackupError = "backup.lastBackupError"
-    }
+    private let logStore: any LogStoreGateway
+    private let noteStore: any NoteStoreGateway
+    private let settingsStore: any SettingsStoreGateway
+    private let profileStore: any ProfileStoreGateway
+    private let syncStore: any SyncStoreGateway
+
+    private let trendService = TrendService()
+    private let logService: LogService
+    private let settingsService: SettingsService
+    private let importExportService: ImportExportService
+    private let backupService: BackupService
+    private var syncCoordinator: SyncCoordinator?
 
     init(
         store: SQLiteStore = try! SQLiteStore(),
@@ -39,16 +109,59 @@ final class AppRepository: ObservableObject {
         reminderScheduler: @escaping (Bool, Int, Int) -> Void = NotificationScheduler.updateDailyReminder,
         preferences: UserDefaults = .standard
     ) {
-        self.store = store
+        let gateways = store.makeGateways()
+
         self.cloudKitSyncFeatureEnabled = cloudKitSyncFeatureEnabled
-        self.reminderScheduler = reminderScheduler
-        self.preferences = preferences
+        self.logStore = gateways.logs
+        self.noteStore = gateways.notes
+        self.settingsStore = gateways.settings
+        self.profileStore = gateways.profile
+        self.syncStore = gateways.sync
+
+        self.logService = LogService(logStore: gateways.logs, noteStore: gateways.notes)
+        self.settingsService = SettingsService(
+            settingsStore: gateways.settings,
+            profileStore: gateways.profile,
+            reminderScheduler: reminderScheduler
+        )
+        self.importExportService = ImportExportService(
+            logStore: gateways.logs,
+            noteStore: gateways.notes,
+            settingsStore: gateways.settings,
+            profileStore: gateways.profile,
+            databaseStore: gateways.database,
+            cloudKitSyncFeatureEnabled: cloudKitSyncFeatureEnabled
+        )
+        self.backupService = BackupService(databaseStore: gateways.database, preferences: preferences)
+
         if cloudKitSyncFeatureEnabled {
-            self.syncService = syncService ?? CloudKitSyncService()
-        } else {
-            self.syncService = nil
+            let resolvedSyncService = syncService ?? CloudKitSyncService()
+            self.syncCoordinator = SyncCoordinator(
+                syncStore: gateways.sync,
+                settingsStore: gateways.settings,
+                profileStore: gateways.profile,
+                syncService: resolvedSyncService,
+                currentSettings: { [weak self] in
+                    self?.settings ?? .default
+                },
+                reload: { [weak self] in
+                    self?.loadAll()
+                }
+            )
+            self.syncCoordinator?.onProgressChange = { [weak self] inProgress in
+                self?.syncInProgress = inProgress
+            }
         }
-        loadBackupPreferences()
+
+        self.backupService.onStateChange = { [weak self] state, surfacedError in
+            guard let self else { return }
+            self.applyBackupState(state)
+            if let surfacedError {
+                self.lastErrorMessage = surfacedError
+            }
+        }
+        applyBackupState(backupService.state)
+
         loadAll()
         if cloudKitSyncFeatureEnabled {
             queueSyncIfEnabled()
@@ -57,99 +170,66 @@ final class AppRepository: ObservableObject {
 
     func loadAll() {
         do {
-            logs = try store.fetchWeightLogs()
-            notes = try store.fetchNotes()
-            settings = try store.fetchSettings()
-            if !cloudKitSyncFeatureEnabled && settings.iCloudSyncEnabled {
-                settings.iCloudSyncEnabled = false
-                try store.upsert(settings: settings)
+            logs = try logStore.fetchLogs()
+            notes = try noteStore.fetchNotes()
+
+            var loadedSettings = try settingsStore.fetchSettings()
+            if !cloudKitSyncFeatureEnabled && loadedSettings.iCloudSyncEnabled {
+                loadedSettings.iCloudSyncEnabled = false
+                try settingsStore.upsert(settings: loadedSettings)
             }
-            profile = try store.fetchProfile()
-            reminderScheduler(
-                settings.reminderEnabled,
-                settings.reminderHour,
-                settings.reminderMinute
-            )
+            settings = loadedSettings
+            profile = try profileStore.fetchProfile()
+
+            settingsService.scheduleReminder(for: loadedSettings)
         } catch {
-            lastErrorMessage = "Could not load local data: \(error.localizedDescription)"
+            lastErrorMessage = DomainErrorMessageFormatter.message(
+                for: error,
+                context: "Could not load local data"
+            )
         }
     }
 
     func setICloudBackupEnabled(_ enabled: Bool) {
-        iCloudBackupEnabled = enabled
-        preferences.set(enabled, forKey: BackupPreferencesKey.enabled)
+        backupService.setEnabled(enabled)
+        applyBackupState(backupService.state)
         if enabled {
             triggerDailyBackupIfNeeded()
         }
     }
 
     func setBackupFolder(_ url: URL) {
-        let hasAccess = url.startAccessingSecurityScopedResource()
-        defer {
-            if hasAccess {
-                url.stopAccessingSecurityScopedResource()
-            }
-        }
-
         do {
-            let bookmarkData = try url.bookmarkData(
-                options: bookmarkCreationOptions(),
-                includingResourceValuesForKeys: nil,
-                relativeTo: nil
-            )
-            backupFolderBookmarkData = bookmarkData
-            lastBackupError = nil
-            preferences.set(bookmarkData, forKey: BackupPreferencesKey.folderBookmarkData)
-            preferences.removeObject(forKey: BackupPreferencesKey.lastBackupError)
-
+            try backupService.setFolder(url)
+            applyBackupState(backupService.state)
             if iCloudBackupEnabled {
                 triggerDailyBackupIfNeeded()
             }
         } catch {
-            lastErrorMessage = "Could not save backup folder: \(error.localizedDescription)"
+            lastErrorMessage = DomainErrorMessageFormatter.message(
+                for: error,
+                context: "Could not save backup folder"
+            )
         }
     }
 
     func clearBackupFolder() {
-        backupFolderBookmarkData = nil
-        preferences.removeObject(forKey: BackupPreferencesKey.folderBookmarkData)
+        backupService.clearFolder()
+        applyBackupState(backupService.state)
     }
 
     func backupFolderDisplayName() -> String? {
-        guard let bookmarkData = backupFolderBookmarkData else { return nil }
-        var stale = false
-        guard let url = try? URL(
-            resolvingBookmarkData: bookmarkData,
-            options: bookmarkResolutionOptions(),
-            relativeTo: nil,
-            bookmarkDataIsStale: &stale
-        ) else {
-            return nil
-        }
-        return url.lastPathComponent
+        backupService.folderDisplayName()
     }
 
     func triggerDailyBackupIfNeeded() {
-        guard iCloudBackupEnabled else { return }
-        guard backupTask == nil else { return }
-        guard let bookmarkData = backupFolderBookmarkData else { return }
-        guard shouldRunDailyBackup(now: Date(), lastBackupAt: lastBackupAt) else { return }
-        runBackup(bookmarkData: bookmarkData)
+        backupService.triggerDailyIfNeeded()
+        applyBackupState(backupService.state)
     }
 
     func triggerBackupNow() {
-        guard !backupInProgress else { return }
-        guard iCloudBackupEnabled else {
-            lastBackupError = "Enable iCloud Drive backup first."
-            preferences.set(lastBackupError, forKey: BackupPreferencesKey.lastBackupError)
-            return
-        }
-        guard let bookmarkData = backupFolderBookmarkData else {
-            lastBackupError = "Choose an iCloud Drive folder for backups first."
-            preferences.set(lastBackupError, forKey: BackupPreferencesKey.lastBackupError)
-            return
-        }
-        runBackup(bookmarkData: bookmarkData)
+        backupService.triggerNow()
+        applyBackupState(backupService.state)
     }
 
     func addWeightLog(
@@ -159,40 +239,34 @@ final class AppRepository: ObservableObject {
         noteText: String?,
         source: WeightLogSource
     ) {
-        let trimmedNote = noteText?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        let note: NoteEntry? = trimmedNote.isEmpty ? nil : NoteEntry(timestamp: timestamp, text: trimmedNote)
-        let finalUnit = unit ?? settings.defaultUnit
-
         do {
-            if let note {
-                try store.insert(note)
-            }
-
-            let log = WeightLog(
-                timestamp: timestamp,
+            try logService.addWeightLog(
                 weight: weight,
-                unit: finalUnit,
-                source: source,
-                noteID: note?.id
+                timestamp: timestamp,
+                unit: unit ?? settings.defaultUnit,
+                noteText: noteText,
+                source: source
             )
-            try store.insert(log)
             loadAll()
             queueSyncIfEnabled()
         } catch {
-            lastErrorMessage = "Could not save weight entry: \(error.localizedDescription)"
+            lastErrorMessage = DomainErrorMessageFormatter.message(
+                for: error,
+                context: "Could not save weight entry"
+            )
         }
     }
 
     func addStandaloneNote(text: String, timestamp: Date = Date()) {
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
-
         do {
-            try store.insert(NoteEntry(timestamp: timestamp, text: trimmed))
+            try logService.addStandaloneNote(text: text, timestamp: timestamp)
             loadAll()
             queueSyncIfEnabled()
         } catch {
-            lastErrorMessage = "Could not save note: \(error.localizedDescription)"
+            lastErrorMessage = DomainErrorMessageFormatter.message(
+                for: error,
+                context: "Could not save note"
+            )
         }
     }
 
@@ -202,20 +276,15 @@ final class AppRepository: ObservableObject {
         guard !trimmed.isEmpty else { return id }
 
         do {
-            if let id {
-                try store.update(NoteEntry(id: id, timestamp: timestamp, text: trimmed))
-                loadAll()
-                queueSyncIfEnabled()
-                return id
-            }
-
-            let note = NoteEntry(timestamp: timestamp, text: trimmed)
-            try store.insert(note)
+            let noteID = try logService.upsertStandaloneNote(id: id, text: trimmed, timestamp: timestamp)
             loadAll()
             queueSyncIfEnabled()
-            return note.id
+            return noteID
         } catch {
-            lastErrorMessage = "Could not save note: \(error.localizedDescription)"
+            lastErrorMessage = DomainErrorMessageFormatter.message(
+                for: error,
+                context: "Could not save note"
+            )
             return id
         }
     }
@@ -226,72 +295,46 @@ final class AppRepository: ObservableObject {
         timestamp: Date,
         noteText: String
     ) {
-        let trimmedNote = noteText.trimmingCharacters(in: .whitespacesAndNewlines)
-
         do {
-            var noteID = original.noteID
-
-            if let existingNoteID = original.noteID {
-                if trimmedNote.isEmpty {
-                    try store.deleteNote(id: existingNoteID)
-                    noteID = nil
-                } else {
-                    let note = NoteEntry(id: existingNoteID, timestamp: timestamp, text: trimmedNote)
-                    try store.update(note)
-                    noteID = existingNoteID
-                }
-            } else if !trimmedNote.isEmpty {
-                let note = NoteEntry(timestamp: timestamp, text: trimmedNote)
-                try store.insert(note)
-                noteID = note.id
-            }
-
-            let updated = WeightLog(
-                id: original.id,
-                timestamp: timestamp,
-                weight: weight,
-                unit: original.unit,
-                source: original.source,
-                noteID: noteID
-            )
-            try store.update(updated)
+            try logService.updateWeightLog(original, weight: weight, timestamp: timestamp, noteText: noteText)
             loadAll()
             queueSyncIfEnabled()
         } catch {
-            lastErrorMessage = "Could not update entry: \(error.localizedDescription)"
+            lastErrorMessage = DomainErrorMessageFormatter.message(
+                for: error,
+                context: "Could not update entry"
+            )
         }
     }
 
     func deleteWeightLog(_ log: WeightLog) {
         do {
-            if let noteID = log.noteID {
-                try store.deleteNote(id: noteID)
-            }
-            try store.deleteWeightLog(id: log.id)
+            try logService.deleteWeightLog(log)
             loadAll()
             queueSyncIfEnabled()
         } catch {
-            lastErrorMessage = "Could not delete entry: \(error.localizedDescription)"
+            lastErrorMessage = DomainErrorMessageFormatter.message(
+                for: error,
+                context: "Could not delete entry"
+            )
         }
     }
 
     func updateSettings(_ updated: AppSettings) {
-        var persisted = updated
-        if !cloudKitSyncFeatureEnabled {
-            persisted.iCloudSyncEnabled = false
-        }
-
         do {
-            try store.upsert(settings: persisted)
-            settings = persisted
-            reminderScheduler(
-                persisted.reminderEnabled,
-                persisted.reminderHour,
-                persisted.reminderMinute
+            let persisted = settingsService.normalizedSettings(
+                updated,
+                cloudKitSyncFeatureEnabled: cloudKitSyncFeatureEnabled,
+                current: settings
             )
+            try settingsService.saveSettings(persisted)
+            settings = persisted
             queueSyncIfEnabled()
         } catch {
-            lastErrorMessage = "Could not save settings: \(error.localizedDescription)"
+            lastErrorMessage = DomainErrorMessageFormatter.message(
+                for: error,
+                context: "Could not save settings"
+            )
         }
     }
 
@@ -302,23 +345,359 @@ final class AppRepository: ObservableObject {
 
     func updateProfile(_ updated: UserProfile) {
         do {
-            try store.upsert(profile: updated)
+            try settingsService.saveProfile(updated)
             profile = updated
             queueSyncIfEnabled()
         } catch {
-            lastErrorMessage = "Could not save profile: \(error.localizedDescription)"
+            lastErrorMessage = DomainErrorMessageFormatter.message(
+                for: error,
+                context: "Could not save profile"
+            )
         }
     }
 
     func triggerSyncNow() {
         guard cloudKitSyncFeatureEnabled else {
-            lastErrorMessage = "iCloud sync is disabled in this build."
+            lastErrorMessage = DomainErrorMessageFormatter.message(
+                for: SyncCoordinator.SyncError.featureDisabled,
+                context: "Sync"
+            )
             return
         }
         queueSyncIfEnabled(force: true)
     }
 
     func importCSV(from data: Data) {
+        do {
+            try importExportService.importCSV(from: data)
+            loadAll()
+            queueSyncIfEnabled()
+        } catch {
+            lastErrorMessage = DomainErrorMessageFormatter.message(
+                for: error,
+                context: "CSV import failed"
+            )
+        }
+    }
+
+    func importJSON(from data: Data) {
+        do {
+            try importExportService.importJSON(from: data, currentSettings: settings)
+            loadAll()
+            queueSyncIfEnabled()
+        } catch {
+            lastErrorMessage = DomainErrorMessageFormatter.message(
+                for: error,
+                context: "JSON import failed"
+            )
+        }
+    }
+
+    func importSQLite(from url: URL) {
+        do {
+            try importExportService.importSQLite(from: url)
+            loadAll()
+            queueSyncIfEnabled()
+        } catch {
+            lastErrorMessage = DomainErrorMessageFormatter.message(
+                for: error,
+                context: "SQLite restore failed"
+            )
+        }
+    }
+
+    @discardableResult
+    func importAppleHealthZIP(from url: URL) -> AppleHealthImportSummary? {
+        do {
+            let summary = try importExportService.importAppleHealthZIP(from: url, knownLogIDs: Set(logs.map(\.id)))
+            loadAll()
+            queueSyncIfEnabled()
+            return summary
+        } catch {
+            lastErrorMessage = DomainErrorMessageFormatter.message(
+                for: error,
+                context: "Apple Health import failed"
+            )
+            return nil
+        }
+    }
+
+    func exportCSV() -> Data {
+        importExportService.exportCSV(logs: logs, notes: notes)
+    }
+
+    func exportJSON() -> Data {
+        do {
+            return try importExportService.exportJSON(
+                settings: settings,
+                profile: profile,
+                logs: logs,
+                notes: notes
+            )
+        } catch {
+            lastErrorMessage = DomainErrorMessageFormatter.message(
+                for: error,
+                context: "Could not export JSON"
+            )
+            return Data()
+        }
+    }
+
+    func exportSQLite() -> Data {
+        do {
+            return try importExportService.exportSQLite()
+        } catch {
+            lastErrorMessage = DomainErrorMessageFormatter.message(
+                for: error,
+                context: "Could not export SQLite"
+            )
+            return Data()
+        }
+    }
+
+    func deleteAllData() {
+        do {
+            try importExportService.deleteAllData()
+            loadAll()
+        } catch {
+            lastErrorMessage = DomainErrorMessageFormatter.message(
+                for: error,
+                context: "Could not delete all data"
+            )
+        }
+    }
+
+    func note(for log: WeightLog) -> NoteEntry? {
+        guard let noteID = log.noteID else { return nil }
+        return notes.first(where: { $0.id == noteID })
+    }
+
+    func convertedWeight(_ log: WeightLog, to unit: WeightUnit) -> Double {
+        trendService.convertedWeight(log, to: unit)
+    }
+
+    func logs(in range: ChartRange) -> [WeightLog] {
+        trendService.logs(in: logs, range: range, now: Date())
+    }
+
+    func movingAverage(for input: [WeightLog], window: Int) -> [(Date, Double)] {
+        trendService.movingAverage(for: input, window: window, outputUnit: settings.defaultUnit)
+    }
+
+    private func queueSyncIfEnabled(force: Bool = false) {
+        guard cloudKitSyncFeatureEnabled else { return }
+        syncCoordinator?.queueSyncIfEnabled(force: force)
+    }
+
+    private func applyBackupState(_ state: BackupService.State) {
+        backupInProgress = state.inProgress
+        iCloudBackupEnabled = state.enabled
+        backupFolderBookmarkData = state.folderBookmarkData
+        lastBackupAt = state.lastBackupAt
+        lastBackupError = state.lastBackupError
+    }
+}
+
+private struct TrendService {
+    func convertedWeight(_ log: WeightLog, to unit: WeightUnit) -> Double {
+        guard log.unit != unit else { return log.weight }
+
+        switch (log.unit, unit) {
+        case (.kg, .lbs):
+            return log.weight * 2.20462262
+        case (.lbs, .kg):
+            return log.weight / 2.20462262
+        default:
+            return log.weight
+        }
+    }
+
+    func logs(in allLogs: [WeightLog], range: ChartRange, now: Date) -> [WeightLog] {
+        switch range {
+        case .all:
+            return allLogs
+        default:
+            guard let cutoff = Calendar.current.date(byAdding: .day, value: -range.days, to: now) else {
+                return allLogs
+            }
+            return allLogs.filter { $0.timestamp >= cutoff }
+        }
+    }
+
+    func movingAverage(
+        for input: [WeightLog],
+        window: Int,
+        outputUnit: WeightUnit
+    ) -> [(Date, Double)] {
+        guard window > 1 else {
+            return input.sorted(by: { $0.timestamp < $1.timestamp }).map {
+                ($0.timestamp, convertedWeight($0, to: outputUnit))
+            }
+        }
+
+        let sorted = input.sorted(by: { $0.timestamp < $1.timestamp })
+        guard sorted.count >= window else { return [] }
+
+        var values: [(Date, Double)] = []
+        for index in (window - 1)..<sorted.count {
+            let group = sorted[(index - window + 1)...index]
+            let average = group.map { convertedWeight($0, to: outputUnit) }.reduce(0, +) / Double(window)
+            values.append((sorted[index].timestamp, average))
+        }
+        return values
+    }
+}
+
+private struct LogService {
+    let logStore: any LogStoreGateway
+    let noteStore: any NoteStoreGateway
+
+    func addWeightLog(
+        weight: Double,
+        timestamp: Date,
+        unit: WeightUnit,
+        noteText: String?,
+        source: WeightLogSource
+    ) throws {
+        let trimmedNote = noteText?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let note: NoteEntry? = trimmedNote.isEmpty ? nil : NoteEntry(timestamp: timestamp, text: trimmedNote)
+
+        if let note {
+            try noteStore.insert(note)
+        }
+
+        let log = WeightLog(
+            timestamp: timestamp,
+            weight: weight,
+            unit: unit,
+            source: source,
+            noteID: note?.id
+        )
+        try logStore.insert(log)
+    }
+
+    func addStandaloneNote(text: String, timestamp: Date) throws {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        try noteStore.insert(NoteEntry(timestamp: timestamp, text: trimmed))
+    }
+
+    @discardableResult
+    func upsertStandaloneNote(id: String?, text: String, timestamp: Date) throws -> String {
+        if let id {
+            try noteStore.update(NoteEntry(id: id, timestamp: timestamp, text: text))
+            return id
+        }
+
+        let note = NoteEntry(timestamp: timestamp, text: text)
+        try noteStore.insert(note)
+        return note.id
+    }
+
+    func updateWeightLog(
+        _ original: WeightLog,
+        weight: Double,
+        timestamp: Date,
+        noteText: String
+    ) throws {
+        let trimmedNote = noteText.trimmingCharacters(in: .whitespacesAndNewlines)
+        var noteID = original.noteID
+
+        if let existingNoteID = original.noteID {
+            if trimmedNote.isEmpty {
+                try noteStore.deleteNote(id: existingNoteID)
+                noteID = nil
+            } else {
+                let note = NoteEntry(id: existingNoteID, timestamp: timestamp, text: trimmedNote)
+                try noteStore.update(note)
+                noteID = existingNoteID
+            }
+        } else if !trimmedNote.isEmpty {
+            let note = NoteEntry(timestamp: timestamp, text: trimmedNote)
+            try noteStore.insert(note)
+            noteID = note.id
+        }
+
+        let updated = WeightLog(
+            id: original.id,
+            timestamp: timestamp,
+            weight: weight,
+            unit: original.unit,
+            source: original.source,
+            noteID: noteID
+        )
+        try logStore.update(updated)
+    }
+
+    func deleteWeightLog(_ log: WeightLog) throws {
+        if let noteID = log.noteID {
+            try noteStore.deleteNote(id: noteID)
+        }
+        try logStore.deleteLog(id: log.id)
+    }
+}
+
+private struct SettingsService {
+    let settingsStore: any SettingsStoreGateway
+    let profileStore: any ProfileStoreGateway
+    let reminderScheduler: (Bool, Int, Int) -> Void
+
+    func normalizedSettings(
+        _ updated: AppSettings,
+        cloudKitSyncFeatureEnabled: Bool,
+        current: AppSettings
+    ) -> AppSettings {
+        var persisted = updated
+        if !cloudKitSyncFeatureEnabled {
+            persisted.iCloudSyncEnabled = false
+        }
+        persisted.lastSyncAt = current.lastSyncAt
+        persisted.lastSyncError = current.lastSyncError
+        return persisted
+    }
+
+    func saveSettings(_ settings: AppSettings) throws {
+        try settingsStore.upsert(settings: settings)
+        scheduleReminder(for: settings)
+    }
+
+    func saveProfile(_ profile: UserProfile) throws {
+        try profileStore.upsert(profile: profile)
+    }
+
+    func scheduleReminder(for settings: AppSettings) {
+        reminderScheduler(settings.reminderEnabled, settings.reminderHour, settings.reminderMinute)
+    }
+}
+
+private struct ImportExportService {
+    enum ImportExportError: LocalizedError {
+        case csv(Error)
+        case json(Error)
+        case sqlite(Error)
+        case appleHealth(Error)
+        case export(Error)
+
+        var errorDescription: String? {
+            switch self {
+            case .csv(let error),
+                    .json(let error),
+                    .sqlite(let error),
+                    .appleHealth(let error),
+                    .export(let error):
+                return error.localizedDescription
+            }
+        }
+    }
+
+    let logStore: any LogStoreGateway
+    let noteStore: any NoteStoreGateway
+    let settingsStore: any SettingsStoreGateway
+    let profileStore: any ProfileStoreGateway
+    let databaseStore: any DatabaseStoreGateway
+    let cloudKitSyncFeatureEnabled: Bool
+
+    func importCSV(from data: Data) throws {
         do {
             let rows = try CSVCodec.parse(data: data)
             for row in rows {
@@ -328,10 +707,10 @@ final class AppRepository: ObservableObject {
 
                 let noteID: String?
                 if normalizedNote.isEmpty {
-                    try? store.deleteNote(id: deterministicNoteID)
+                    try? noteStore.deleteNote(id: deterministicNoteID)
                     noteID = nil
                 } else {
-                    try store.insert(NoteEntry(id: deterministicNoteID, timestamp: row.timestamp, text: normalizedNote))
+                    try noteStore.insert(NoteEntry(id: deterministicNoteID, timestamp: row.timestamp, text: normalizedNote))
                     noteID = deterministicNoteID
                 }
 
@@ -343,27 +722,25 @@ final class AppRepository: ObservableObject {
                     source: .csv,
                     noteID: noteID
                 )
-                try store.insert(log)
+                try logStore.insert(log)
             }
-            loadAll()
-            queueSyncIfEnabled()
         } catch {
-            lastErrorMessage = "CSV import failed: \(error.localizedDescription)"
+            throw ImportExportError.csv(error)
         }
     }
 
-    func importJSON(from data: Data) {
+    func importJSON(from data: Data, currentSettings: AppSettings) throws {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
 
         do {
             let payload = try decoder.decode(ExportPayload.self, from: data)
             for note in payload.notes {
-                try store.insert(note)
+                try noteStore.insert(note)
             }
 
             for log in payload.logs {
-                try store.insert(log)
+                try logStore.insert(log)
             }
 
             let importedSettings = AppSettings(
@@ -373,35 +750,29 @@ final class AppRepository: ObservableObject {
                 reminderMinute: payload.settings.reminderMinute,
                 hasCompletedOnboarding: payload.settings.hasCompletedOnboarding,
                 iCloudSyncEnabled: cloudKitSyncFeatureEnabled ? payload.settings.iCloudSyncEnabled : false,
-                lastSyncAt: settings.lastSyncAt,
-                lastSyncError: settings.lastSyncError
+                lastSyncAt: currentSettings.lastSyncAt,
+                lastSyncError: currentSettings.lastSyncError
             )
-            try store.upsert(settings: importedSettings)
-            try store.upsert(profile: payload.profile)
-
-            loadAll()
-            queueSyncIfEnabled()
+            try settingsStore.upsert(settings: importedSettings)
+            try profileStore.upsert(profile: payload.profile)
         } catch {
-            lastErrorMessage = "JSON import failed: \(error.localizedDescription)"
+            throw ImportExportError.json(error)
         }
     }
 
-    func importSQLite(from url: URL) {
+    func importSQLite(from url: URL) throws {
         do {
-            try store.mergeDatabaseWithoutOverwriting(from: url)
-            loadAll()
-            queueSyncIfEnabled()
+            try databaseStore.mergeDatabaseWithoutOverwriting(from: url)
         } catch {
-            lastErrorMessage = "SQLite restore failed: \(error.localizedDescription)"
+            throw ImportExportError.sqlite(error)
         }
     }
 
-    @discardableResult
-    func importAppleHealthZIP(from url: URL) -> AppleHealthImportSummary? {
+    func importAppleHealthZIP(from url: URL, knownLogIDs: Set<String>) throws -> AppleHealthImportSummary {
         do {
-            let rows = try AppleHealthImport.parseBodyMassRows(fromExportAt: url)
+            let rows = try AppleHealthImportParser.parseBodyMassRows(fromExportAt: url)
             var seenRowIDs: Set<String> = []
-            var knownLogIDs = Set(logs.map(\.id))
+            var mutableKnownIDs = knownLogIDs
             var newRecords = 0
 
             for row in rows {
@@ -421,30 +792,32 @@ final class AppRepository: ObservableObject {
                     source: .health,
                     noteID: nil
                 )
-                if knownLogIDs.insert(log.id).inserted {
+                if mutableKnownIDs.insert(log.id).inserted {
                     newRecords += 1
                 }
-                try store.insert(log)
+                try logStore.insert(log)
             }
 
-            loadAll()
-            queueSyncIfEnabled()
             return AppleHealthImportSummary(
                 processedRecords: seenRowIDs.count,
                 newRecords: newRecords
             )
         } catch {
-            lastErrorMessage = "Apple Health import failed: \(error.localizedDescription)"
-            return nil
+            throw ImportExportError.appleHealth(error)
         }
     }
 
-    func exportCSV() -> Data {
+    func exportCSV(logs: [WeightLog], notes: [NoteEntry]) -> Data {
         let noteMap = Dictionary(uniqueKeysWithValues: notes.map { ($0.id, $0) })
         return CSVCodec.export(logs: logs, notesByID: noteMap)
     }
 
-    func exportJSON() -> Data {
+    func exportJSON(
+        settings: AppSettings,
+        profile: UserProfile,
+        logs: [WeightLog],
+        notes: [NoteEntry]
+    ) throws -> Data {
         let payload = ExportPayload(
             exportedAt: Date(),
             settings: settings,
@@ -460,96 +833,163 @@ final class AppRepository: ObservableObject {
         do {
             return try encoder.encode(payload)
         } catch {
-            lastErrorMessage = "Could not export JSON: \(error.localizedDescription)"
-            return Data()
+            throw ImportExportError.export(error)
         }
     }
 
-    func exportSQLite() -> Data {
+    func exportSQLite() throws -> Data {
         do {
-            return try store.exportDatabaseData()
+            return try databaseStore.exportDatabaseData()
         } catch {
-            lastErrorMessage = "Could not export SQLite: \(error.localizedDescription)"
-            return Data()
+            throw ImportExportError.export(error)
         }
     }
 
-    func deleteAllData() {
-        do {
-            try store.deleteAllData()
-            loadAll()
-        } catch {
-            lastErrorMessage = "Could not delete all data: \(error.localizedDescription)"
-        }
+    func deleteAllData() throws {
+        try databaseStore.deleteAllData()
     }
 
-    func note(for log: WeightLog) -> NoteEntry? {
-        guard let noteID = log.noteID else { return nil }
-        return notes.first(where: { $0.id == noteID })
+    private func csvRowKey(timestamp: Date, weight: Double, unit: WeightUnit) -> String {
+        let millis = Int64((timestamp.timeIntervalSince1970 * 1000).rounded())
+        let weightString = String(format: "%.6f", weight)
+        let canonical = "\(millis)|\(weightString)|\(unit.rawValue)"
+        let digest = SHA256.hash(data: Data(canonical.utf8))
+        return digest.map { String(format: "%02x", $0) }.joined()
     }
 
-    func convertedWeight(_ log: WeightLog, to unit: WeightUnit) -> Double {
-        guard log.unit != unit else { return log.weight }
+    private func healthRowKey(timestamp: Date, weight: Double, unit: WeightUnit, sourceName: String) -> String {
+        let millis = Int64((timestamp.timeIntervalSince1970 * 1000).rounded())
+        let weightString = String(format: "%.6f", weight)
+        let canonical = "\(millis)|\(weightString)|\(unit.rawValue)|\(sourceName.lowercased())"
+        let digest = SHA256.hash(data: Data(canonical.utf8))
+        return digest.map { String(format: "%02x", $0) }.joined()
+    }
+}
 
-        switch (log.unit, unit) {
-        case (.kg, .lbs):
-            return log.weight * 2.20462262
-        case (.lbs, .kg):
-            return log.weight / 2.20462262
-        default:
-            return log.weight
-        }
+@MainActor
+private final class BackupService {
+    struct State {
+        var inProgress: Bool = false
+        var enabled: Bool = false
+        var folderBookmarkData: Data?
+        var lastBackupAt: Date?
+        var lastBackupError: String?
     }
 
-    func logs(in range: ChartRange) -> [WeightLog] {
-        switch range {
-        case .all:
-            return logs
-        default:
-            guard let cutoff = Calendar.current.date(byAdding: .day, value: -range.days, to: Date()) else {
-                return logs
+    private enum BackupPreferencesKey {
+        static let enabled = "backup.enabled"
+        static let folderBookmarkData = "backup.folderBookmarkData"
+        static let lastBackupAt = "backup.lastBackupAt"
+        static let lastBackupError = "backup.lastBackupError"
+    }
+
+    let databaseStore: any DatabaseStoreGateway
+    let preferences: UserDefaults
+
+    private(set) var state: State
+    var onStateChange: ((State, String?) -> Void)?
+
+    private var backupTask: Task<Void, Never>?
+
+    init(databaseStore: any DatabaseStoreGateway, preferences: UserDefaults) {
+        self.databaseStore = databaseStore
+        self.preferences = preferences
+        self.state = State(
+            inProgress: false,
+            enabled: preferences.bool(forKey: BackupPreferencesKey.enabled),
+            folderBookmarkData: preferences.data(forKey: BackupPreferencesKey.folderBookmarkData),
+            lastBackupAt: preferences.object(forKey: BackupPreferencesKey.lastBackupAt) as? Date,
+            lastBackupError: preferences.string(forKey: BackupPreferencesKey.lastBackupError)
+        )
+    }
+
+    func setEnabled(_ enabled: Bool) {
+        state.enabled = enabled
+        preferences.set(enabled, forKey: BackupPreferencesKey.enabled)
+        publishState()
+    }
+
+    func setFolder(_ url: URL) throws {
+        let hasAccess = url.startAccessingSecurityScopedResource()
+        defer {
+            if hasAccess {
+                url.stopAccessingSecurityScopedResource()
             }
-            return logs.filter { $0.timestamp >= cutoff }
-        }
-    }
-
-    func movingAverage(for input: [WeightLog], window: Int) -> [(Date, Double)] {
-        guard window > 1 else {
-            return input.sorted(by: { $0.timestamp < $1.timestamp }).map {
-                ($0.timestamp, convertedWeight($0, to: settings.defaultUnit))
-            }
         }
 
-        let sorted = input.sorted(by: { $0.timestamp < $1.timestamp })
-        guard sorted.count >= window else { return [] }
+        let bookmarkData = try url.bookmarkData(
+            options: bookmarkCreationOptions(),
+            includingResourceValuesForKeys: nil,
+            relativeTo: nil
+        )
 
-        var values: [(Date, Double)] = []
-        for index in (window - 1)..<sorted.count {
-            let group = sorted[(index - window + 1)...index]
-            let average = group.map { convertedWeight($0, to: settings.defaultUnit) }.reduce(0, +) / Double(window)
-            values.append((sorted[index].timestamp, average))
+        state.folderBookmarkData = bookmarkData
+        state.lastBackupError = nil
+
+        preferences.set(bookmarkData, forKey: BackupPreferencesKey.folderBookmarkData)
+        preferences.removeObject(forKey: BackupPreferencesKey.lastBackupError)
+
+        publishState()
+    }
+
+    func clearFolder() {
+        state.folderBookmarkData = nil
+        preferences.removeObject(forKey: BackupPreferencesKey.folderBookmarkData)
+        publishState()
+    }
+
+    func folderDisplayName() -> String? {
+        guard let bookmarkData = state.folderBookmarkData else { return nil }
+
+        var stale = false
+        guard let url = try? URL(
+            resolvingBookmarkData: bookmarkData,
+            options: bookmarkResolutionOptions(),
+            relativeTo: nil,
+            bookmarkDataIsStale: &stale
+        ) else {
+            return nil
         }
-        return values
+
+        return url.lastPathComponent
     }
 
-    private func loadBackupPreferences() {
-        iCloudBackupEnabled = preferences.bool(forKey: BackupPreferencesKey.enabled)
-        backupFolderBookmarkData = preferences.data(forKey: BackupPreferencesKey.folderBookmarkData)
-        lastBackupAt = preferences.object(forKey: BackupPreferencesKey.lastBackupAt) as? Date
-        lastBackupError = preferences.string(forKey: BackupPreferencesKey.lastBackupError)
+    func triggerDailyIfNeeded() {
+        guard state.enabled else { return }
+        guard backupTask == nil else { return }
+        guard let bookmarkData = state.folderBookmarkData else { return }
+        guard shouldRunDailyBackup(now: Date(), lastBackupAt: state.lastBackupAt) else { return }
+
+        runBackup(bookmarkData: bookmarkData)
     }
 
-    private func shouldRunDailyBackup(now: Date, lastBackupAt: Date?) -> Bool {
-        guard let lastBackupAt else { return true }
-        let startOfToday = Calendar.current.startOfDay(for: now)
-        return lastBackupAt < startOfToday
+    func triggerNow() {
+        guard !state.inProgress else { return }
+
+        guard state.enabled else {
+            state.lastBackupError = "Enable iCloud Drive backup first."
+            preferences.set(state.lastBackupError, forKey: BackupPreferencesKey.lastBackupError)
+            publishState()
+            return
+        }
+
+        guard let bookmarkData = state.folderBookmarkData else {
+            state.lastBackupError = "Choose an iCloud Drive folder for backups first."
+            preferences.set(state.lastBackupError, forKey: BackupPreferencesKey.lastBackupError)
+            publishState()
+            return
+        }
+
+        runBackup(bookmarkData: bookmarkData)
     }
 
     private func runBackup(bookmarkData: Data) {
         guard backupTask == nil else { return }
-        backupInProgress = true
 
-        let databaseURL = store.databaseFileURL()
+        state.inProgress = true
+        publishState()
+
+        let databaseURL = databaseStore.databaseFileURL()
         backupTask = Task(priority: .utility) { [weak self] in
             let result: Result<Date, Error> = await withCheckedContinuation { (continuation: CheckedContinuation<Result<Date, Error>, Never>) in
                 DispatchQueue.global(qos: .utility).async {
@@ -564,25 +1004,78 @@ final class AppRepository: ObservableObject {
 
             guard let self else { return }
             self.backupTask = nil
-            self.backupInProgress = false
+            self.state.inProgress = false
 
             switch result {
             case .success(let completedAt):
-                self.lastBackupAt = completedAt
-                self.lastBackupError = nil
+                self.state.lastBackupAt = completedAt
+                self.state.lastBackupError = nil
                 self.preferences.set(completedAt, forKey: BackupPreferencesKey.lastBackupAt)
                 self.preferences.removeObject(forKey: BackupPreferencesKey.lastBackupError)
+                self.publishState()
             case .failure(let error):
-                self.lastBackupError = error.localizedDescription
+                self.state.lastBackupError = error.localizedDescription
                 self.preferences.set(error.localizedDescription, forKey: BackupPreferencesKey.lastBackupError)
-                self.lastErrorMessage = "Backup failed: \(error.localizedDescription)"
+                self.publishState(surfacedError: "Backup failed: \(error.localizedDescription)")
             }
         }
     }
 
-    private func queueSyncIfEnabled(force: Bool = false) {
-        guard cloudKitSyncFeatureEnabled else { return }
-        guard settings.iCloudSyncEnabled else { return }
+    private func shouldRunDailyBackup(now: Date, lastBackupAt: Date?) -> Bool {
+        guard let lastBackupAt else { return true }
+        let startOfToday = Calendar.current.startOfDay(for: now)
+        return lastBackupAt < startOfToday
+    }
+
+    private func publishState(surfacedError: String? = nil) {
+        onStateChange?(state, surfacedError)
+    }
+}
+
+@MainActor
+private final class SyncCoordinator {
+    enum SyncError: LocalizedError {
+        case featureDisabled
+
+        var errorDescription: String? {
+            switch self {
+            case .featureDisabled:
+                return "iCloud sync is disabled in this build."
+            }
+        }
+    }
+
+    let syncStore: any SyncStoreGateway
+    let settingsStore: any SettingsStoreGateway
+    let profileStore: any ProfileStoreGateway
+    let syncService: CloudKitSyncService
+    let currentSettings: () -> AppSettings
+    let reload: () -> Void
+
+    var onProgressChange: ((Bool) -> Void)?
+
+    private var syncInProgress = false
+    private var shouldRunSyncAgain = false
+    private var forceNextSync = false
+
+    init(
+        syncStore: any SyncStoreGateway,
+        settingsStore: any SettingsStoreGateway,
+        profileStore: any ProfileStoreGateway,
+        syncService: CloudKitSyncService,
+        currentSettings: @escaping () -> AppSettings,
+        reload: @escaping () -> Void
+    ) {
+        self.syncStore = syncStore
+        self.settingsStore = settingsStore
+        self.profileStore = profileStore
+        self.syncService = syncService
+        self.currentSettings = currentSettings
+        self.reload = reload
+    }
+
+    func queueSyncIfEnabled(force: Bool = false) {
+        guard currentSettings().iCloudSyncEnabled else { return }
 
         if syncInProgress {
             shouldRunSyncAgain = true
@@ -591,6 +1084,7 @@ final class AppRepository: ObservableObject {
         }
 
         syncInProgress = true
+        onProgressChange?(true)
         shouldRunSyncAgain = false
         forceNextSync = force
 
@@ -600,12 +1094,13 @@ final class AppRepository: ObservableObject {
     }
 
     private func runSyncLoop() async {
-        defer { syncInProgress = false }
-
-        guard let syncService else { return }
+        defer {
+            syncInProgress = false
+            onProgressChange?(false)
+        }
 
         var firstPass = true
-        while settings.iCloudSyncEnabled {
+        while currentSettings().iCloudSyncEnabled {
             let forceThisPass = forceNextSync
             forceNextSync = false
 
@@ -626,28 +1121,28 @@ final class AppRepository: ObservableObject {
                 }
 
                 let result = try await syncService.sync(snapshot: snapshot)
-                try store.markNoteRecordsSynced(ids: result.syncedNoteIDs)
-                try store.markWeightRecordsSynced(ids: result.syncedWeightIDs)
-                try store.applyRemotePullPayload(result.pullPayload)
-                try store.updateSyncStatus(lastSyncAt: result.syncedAt, lastSyncError: nil)
-                loadAll()
+                try syncStore.markNoteRecordsSynced(ids: result.syncedNoteIDs)
+                try syncStore.markWeightRecordsSynced(ids: result.syncedWeightIDs)
+                try syncStore.applyRemotePullPayload(result.pullPayload)
+                try settingsStore.updateSyncStatus(lastSyncAt: result.syncedAt, lastSyncError: nil)
+                reload()
             } catch {
                 let message = syncErrorMessage(error)
-                try? store.updateSyncStatus(lastSyncAt: settings.lastSyncAt, lastSyncError: message)
-                loadAll()
+                try? settingsStore.updateSyncStatus(lastSyncAt: currentSettings().lastSyncAt, lastSyncError: message)
+                reload()
                 break
             }
         }
     }
 
     private func buildSyncSnapshot() throws -> SyncSnapshot {
-        let currentSettings = try store.fetchSettings()
+        let current = try settingsStore.fetchSettings()
         return SyncSnapshot(
-            pendingNotes: try store.fetchPendingNoteRecords(),
-            pendingWeightLogs: try store.fetchPendingWeightRecords(),
-            profile: try store.fetchSyncProfileRecord(),
-            settings: try store.fetchSyncSettingsRecord(),
-            lastSyncAt: currentSettings.lastSyncAt
+            pendingNotes: try syncStore.fetchPendingNoteRecords(),
+            pendingWeightLogs: try syncStore.fetchPendingWeightRecords(),
+            profile: try profileStore.fetchSyncProfileRecord(),
+            settings: try settingsStore.fetchSyncSettingsRecord(),
+            lastSyncAt: current.lastSyncAt
         )
     }
 
@@ -658,38 +1153,6 @@ final class AppRepository: ObservableObject {
         }
         return error.localizedDescription
     }
-
-    private func csvRowKey(timestamp: Date, weight: Double, unit: WeightUnit) -> String {
-        let millis = Int64((timestamp.timeIntervalSince1970 * 1000).rounded())
-        let weightString = String(format: "%.6f", weight)
-        let canonical = "\(millis)|\(weightString)|\(unit.rawValue)"
-        let digest = SHA256.hash(data: Data(canonical.utf8))
-        return digest.map { String(format: "%02x", $0) }.joined()
-    }
-
-    private func healthRowKey(timestamp: Date, weight: Double, unit: WeightUnit, sourceName: String) -> String {
-        let millis = Int64((timestamp.timeIntervalSince1970 * 1000).rounded())
-        let weightString = String(format: "%.6f", weight)
-        let canonical = "\(millis)|\(weightString)|\(unit.rawValue)|\(sourceName.lowercased())"
-        let digest = SHA256.hash(data: Data(canonical.utf8))
-        return digest.map { String(format: "%02x", $0) }.joined()
-    }
-}
-
-private func bookmarkCreationOptions() -> URL.BookmarkCreationOptions {
-#if os(macOS)
-    return [.withSecurityScope]
-#else
-    return []
-#endif
-}
-
-private func bookmarkResolutionOptions() -> URL.BookmarkResolutionOptions {
-#if os(macOS)
-    return [.withSecurityScope]
-#else
-    return []
-#endif
 }
 
 private enum ICloudDriveBackupWorker {
@@ -765,6 +1228,18 @@ private enum ICloudDriveBackupWorker {
     }
 }
 
+private enum DomainErrorMessageFormatter {
+    static func message(for error: Error, context: String) -> String {
+        if let localized = error as? LocalizedError,
+           let description = localized.errorDescription,
+           !description.isEmpty {
+            return "\(context): \(description)"
+        }
+
+        return "\(context): \(error.localizedDescription)"
+    }
+}
+
 private struct ExportPayload: Codable {
     let exportedAt: Date
     let settings: AppSettings
@@ -778,332 +1253,18 @@ struct AppleHealthImportSummary: Equatable {
     let newRecords: Int
 }
 
-private struct AppleHealthBodyMassRow {
-    let timestamp: Date
-    let weight: Double
-    let unit: WeightUnit
-    let sourceName: String
+private func bookmarkCreationOptions() -> URL.BookmarkCreationOptions {
+#if os(macOS)
+    return [.withSecurityScope]
+#else
+    return []
+#endif
 }
 
-private enum AppleHealthImport {
-    private static let supportedRecordType = "HKQuantityTypeIdentifierBodyMass"
-
-    static func parseBodyMassRows(fromExportAt url: URL) throws -> [AppleHealthBodyMassRow] {
-        let xmlData = try extractExportXMLData(from: url)
-        let parser = AppleHealthBodyMassXMLParser()
-        return try parser.parse(data: xmlData)
-    }
-
-    private static func extractExportXMLData(from url: URL) throws -> Data {
-        let values = try? url.resourceValues(forKeys: [.isDirectoryKey])
-        if values?.isDirectory == true {
-            return try extractExportXML(fromDirectory: url)
-        }
-        return try ZIPExportExtractor.extractExportXML(from: url)
-    }
-
-    private static func extractExportXML(fromDirectory directoryURL: URL) throws -> Data {
-        let directPath = directoryURL.appendingPathComponent("export.xml")
-        if FileManager.default.fileExists(atPath: directPath.path) {
-            return try Data(contentsOf: directPath)
-        }
-
-        let nestedPath = directoryURL
-            .appendingPathComponent("apple_health_export")
-            .appendingPathComponent("export.xml")
-        if FileManager.default.fileExists(atPath: nestedPath.path) {
-            return try Data(contentsOf: nestedPath)
-        }
-
-        if let enumerator = FileManager.default.enumerator(
-            at: directoryURL,
-            includingPropertiesForKeys: [.isRegularFileKey],
-            options: [.skipsHiddenFiles]
-        ) {
-            for case let fileURL as URL in enumerator {
-                guard fileURL.lastPathComponent.lowercased() == "export.xml" else { continue }
-                let fileValues = try? fileURL.resourceValues(forKeys: [.isRegularFileKey])
-                if fileValues?.isRegularFile == true {
-                    return try Data(contentsOf: fileURL)
-                }
-            }
-        }
-
-        throw ZIPExportExtractor.ExtractorError.missingExportXML
-    }
-
-    private final class AppleHealthBodyMassXMLParser: NSObject, XMLParserDelegate {
-        private var rows: [AppleHealthBodyMassRow] = []
-
-        private lazy var dateFormatter: DateFormatter = {
-            let formatter = DateFormatter()
-            formatter.locale = Locale(identifier: "en_US_POSIX")
-            formatter.dateFormat = "yyyy-MM-dd HH:mm:ss Z"
-            return formatter
-        }()
-
-        func parse(data: Data) throws -> [AppleHealthBodyMassRow] {
-            let parser = XMLParser(data: data)
-            parser.delegate = self
-            parser.shouldResolveExternalEntities = false
-            parser.shouldProcessNamespaces = false
-
-            guard parser.parse() else {
-                throw parser.parserError ?? ZIPExportExtractor.ExtractorError.invalidArchive("Could not parse Apple Health export XML")
-            }
-            return rows
-        }
-
-        func parser(
-            _ parser: XMLParser,
-            didStartElement elementName: String,
-            namespaceURI: String?,
-            qualifiedName qName: String?,
-            attributes attributeDict: [String: String] = [:]
-        ) {
-            guard elementName == "Record" else { return }
-            guard attributeDict["type"] == AppleHealthImport.supportedRecordType else { return }
-
-            guard let valueString = attributeDict["value"],
-                  let value = Double(valueString),
-                  value > 0,
-                  let dateString = attributeDict["startDate"],
-                  let timestamp = dateFormatter.date(from: dateString),
-                  let unit = parseUnit(attributeDict["unit"]) else {
-                return
-            }
-
-            let sourceName = attributeDict["sourceName"]?.trimmingCharacters(in: .whitespacesAndNewlines)
-            rows.append(
-                AppleHealthBodyMassRow(
-                    timestamp: timestamp,
-                    weight: value,
-                    unit: unit,
-                    sourceName: sourceName?.isEmpty == false ? sourceName! : "Health"
-                )
-            )
-        }
-
-        private func parseUnit(_ value: String?) -> WeightUnit? {
-            guard let value else { return nil }
-            switch value.lowercased() {
-            case "lb", "lbs", "pound", "pounds":
-                return .lbs
-            case "kg", "kgs", "kilogram", "kilograms":
-                return .kg
-            default:
-                return nil
-            }
-        }
-    }
-}
-
-private enum ZIPExportExtractor {
-    struct CentralDirectoryEntry {
-        let fileName: String
-        let compressionMethod: UInt16
-        let compressedSize: UInt32
-        let uncompressedSize: UInt32
-        let localHeaderOffset: UInt32
-    }
-
-    enum ExtractorError: LocalizedError {
-        case invalidArchive(String)
-        case missingExportXML
-        case unsupportedCompression(UInt16)
-        case decompressionFailed(Int32)
-
-        var errorDescription: String? {
-            switch self {
-            case .invalidArchive(let message):
-                return message
-            case .missingExportXML:
-                return "Could not find export.xml inside the Apple Health ZIP."
-            case .unsupportedCompression(let method):
-                return "Unsupported ZIP compression method: \(method)."
-            case .decompressionFailed(let status):
-                return "Could not decompress Apple Health export (zlib status \(status))."
-            }
-        }
-    }
-
-    private static let localFileHeaderSignature: UInt32 = 0x04034B50
-    private static let centralDirectorySignature: UInt32 = 0x02014B50
-    private static let endOfCentralDirectorySignature: UInt32 = 0x06054B50
-
-    static func extractExportXML(from archiveURL: URL) throws -> Data {
-        let archiveData = try Data(contentsOf: archiveURL, options: .mappedIfSafe)
-        let eocdOffset = try locateEndOfCentralDirectory(in: archiveData)
-        let centralDirectorySize = Int(try readUInt32LE(from: archiveData, at: eocdOffset + 12))
-        let centralDirectoryOffset = Int(try readUInt32LE(from: archiveData, at: eocdOffset + 16))
-        let centralDirectoryEnd = centralDirectoryOffset + centralDirectorySize
-
-        guard centralDirectoryOffset >= 0,
-              centralDirectoryEnd <= archiveData.count else {
-            throw ExtractorError.invalidArchive("Invalid central directory range in ZIP.")
-        }
-
-        var cursor = centralDirectoryOffset
-        var exportEntry: CentralDirectoryEntry?
-
-        while cursor < centralDirectoryEnd {
-            let signature = try readUInt32LE(from: archiveData, at: cursor)
-            guard signature == centralDirectorySignature else {
-                throw ExtractorError.invalidArchive("Invalid central directory record signature.")
-            }
-
-            let compressionMethod = try readUInt16LE(from: archiveData, at: cursor + 10)
-            let compressedSize = try readUInt32LE(from: archiveData, at: cursor + 20)
-            let uncompressedSize = try readUInt32LE(from: archiveData, at: cursor + 24)
-            let fileNameLength = Int(try readUInt16LE(from: archiveData, at: cursor + 28))
-            let extraLength = Int(try readUInt16LE(from: archiveData, at: cursor + 30))
-            let commentLength = Int(try readUInt16LE(from: archiveData, at: cursor + 32))
-            let localHeaderOffset = try readUInt32LE(from: archiveData, at: cursor + 42)
-
-            let fileNameStart = cursor + 46
-            let fileNameEnd = fileNameStart + fileNameLength
-            guard fileNameEnd <= archiveData.count else {
-                throw ExtractorError.invalidArchive("Invalid central directory file name range.")
-            }
-
-            let nameData = archiveData.subdata(in: fileNameStart..<fileNameEnd)
-            let fileName = String(data: nameData, encoding: .utf8) ?? String(decoding: nameData, as: UTF8.self)
-            if fileName == "export.xml" || fileName.hasSuffix("/export.xml") {
-                exportEntry = CentralDirectoryEntry(
-                    fileName: fileName,
-                    compressionMethod: compressionMethod,
-                    compressedSize: compressedSize,
-                    uncompressedSize: uncompressedSize,
-                    localHeaderOffset: localHeaderOffset
-                )
-                break
-            }
-
-            cursor = fileNameEnd + extraLength + commentLength
-        }
-
-        guard let entry = exportEntry else {
-            throw ExtractorError.missingExportXML
-        }
-
-        return try extract(entry: entry, from: archiveData)
-    }
-
-    private static func extract(entry: CentralDirectoryEntry, from archiveData: Data) throws -> Data {
-        let localOffset = Int(entry.localHeaderOffset)
-        let localSignature = try readUInt32LE(from: archiveData, at: localOffset)
-        guard localSignature == localFileHeaderSignature else {
-            throw ExtractorError.invalidArchive("Invalid local file header signature for \(entry.fileName).")
-        }
-
-        let localFileNameLength = Int(try readUInt16LE(from: archiveData, at: localOffset + 26))
-        let localExtraLength = Int(try readUInt16LE(from: archiveData, at: localOffset + 28))
-        let compressedStart = localOffset + 30 + localFileNameLength + localExtraLength
-        let compressedEnd = compressedStart + Int(entry.compressedSize)
-        guard compressedStart >= 0, compressedEnd <= archiveData.count else {
-            throw ExtractorError.invalidArchive("Compressed payload range is invalid for \(entry.fileName).")
-        }
-
-        let compressedData = archiveData.subdata(in: compressedStart..<compressedEnd)
-        let result: Data
-        switch entry.compressionMethod {
-        case 0:
-            result = compressedData
-        case 8:
-            result = try inflateRawDeflate(compressedData)
-        default:
-            throw ExtractorError.unsupportedCompression(entry.compressionMethod)
-        }
-
-        if entry.uncompressedSize != 0 && result.count != Int(entry.uncompressedSize) {
-            throw ExtractorError.invalidArchive("Unexpected export.xml size after decompression.")
-        }
-
-        return result
-    }
-
-    private static func locateEndOfCentralDirectory(in data: Data) throws -> Int {
-        guard data.count >= 22 else {
-            throw ExtractorError.invalidArchive("ZIP is too small to contain End of Central Directory.")
-        }
-
-        let maxSearchLength = min(data.count, 22 + 65_535)
-        let lowerBound = data.count - maxSearchLength
-        var cursor = data.count - 22
-
-        while cursor >= lowerBound {
-            if try readUInt32LE(from: data, at: cursor) == endOfCentralDirectorySignature {
-                return cursor
-            }
-            cursor -= 1
-        }
-
-        throw ExtractorError.invalidArchive("Could not locate End of Central Directory in ZIP.")
-    }
-
-    private static func inflateRawDeflate(_ compressedData: Data) throws -> Data {
-        var stream = z_stream()
-        let initStatus = inflateInit2_(&stream, -MAX_WBITS, ZLIB_VERSION, Int32(MemoryLayout<z_stream>.size))
-        guard initStatus == Z_OK else {
-            throw ExtractorError.decompressionFailed(initStatus)
-        }
-        defer {
-            inflateEnd(&stream)
-        }
-
-        var output = Data()
-        output.reserveCapacity(max(compressedData.count * 2, 32 * 1024))
-
-        let chunkSize = 64 * 1024
-        var outBuffer = [UInt8](repeating: 0, count: chunkSize)
-
-        return try compressedData.withUnsafeBytes { rawBuffer -> Data in
-            guard let baseAddress = rawBuffer.baseAddress?.assumingMemoryBound(to: Bytef.self) else {
-                return Data()
-            }
-
-            stream.next_in = UnsafeMutablePointer<Bytef>(mutating: baseAddress)
-            stream.avail_in = uInt(rawBuffer.count)
-
-            while true {
-                let status = outBuffer.withUnsafeMutableBytes { buffer -> Int32 in
-                    stream.next_out = buffer.baseAddress?.assumingMemoryBound(to: Bytef.self)
-                    stream.avail_out = uInt(chunkSize)
-                    return inflate(&stream, Z_NO_FLUSH)
-                }
-
-                let produced = chunkSize - Int(stream.avail_out)
-                if produced > 0 {
-                    output.append(outBuffer, count: produced)
-                }
-
-                if status == Z_STREAM_END {
-                    break
-                }
-
-                guard status == Z_OK else {
-                    throw ExtractorError.decompressionFailed(status)
-                }
-            }
-
-            return output
-        }
-    }
-
-    private static func readUInt16LE(from data: Data, at offset: Int) throws -> UInt16 {
-        guard offset >= 0, offset + 2 <= data.count else {
-            throw ExtractorError.invalidArchive("Unexpected end of ZIP while reading UInt16.")
-        }
-        return UInt16(data[offset]) | (UInt16(data[offset + 1]) << 8)
-    }
-
-    private static func readUInt32LE(from data: Data, at offset: Int) throws -> UInt32 {
-        guard offset >= 0, offset + 4 <= data.count else {
-            throw ExtractorError.invalidArchive("Unexpected end of ZIP while reading UInt32.")
-        }
-        return UInt32(data[offset])
-            | (UInt32(data[offset + 1]) << 8)
-            | (UInt32(data[offset + 2]) << 16)
-            | (UInt32(data[offset + 3]) << 24)
-    }
+private func bookmarkResolutionOptions() -> URL.BookmarkResolutionOptions {
+#if os(macOS)
+    return [.withSecurityScope]
+#else
+    return []
+#endif
 }

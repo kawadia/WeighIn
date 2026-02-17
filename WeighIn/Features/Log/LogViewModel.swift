@@ -27,18 +27,23 @@ final class LogViewModel: ObservableObject {
     private var isVoicePressActive = false
     private var isVoiceStartInFlight = false
     private let shouldPersistDraft: Bool
+    private var loggingUseCase: (any LoggingUseCase)?
     private var cancellables: Set<AnyCancellable> = []
     private let audioEngine = AVAudioEngine()
     private let speechRecognizer = SFSpeechRecognizer(locale: Locale.current)
     private var recognitionRequest: SFSpeechAudioBufferRecognitionRequest?
     private var recognitionTask: SFSpeechRecognitionTask?
 
-    convenience init() {
-        self.init(shouldPersistDraft: LogViewModel.defaultShouldPersistDraft)
+    convenience init(loggingUseCase: (any LoggingUseCase)? = nil) {
+        self.init(
+            shouldPersistDraft: LogViewModel.defaultShouldPersistDraft,
+            loggingUseCase: loggingUseCase
+        )
     }
 
-    init(shouldPersistDraft: Bool) {
+    init(shouldPersistDraft: Bool, loggingUseCase: (any LoggingUseCase)? = nil) {
         self.shouldPersistDraft = shouldPersistDraft
+        self.loggingUseCase = loggingUseCase
         if shouldPersistDraft {
             restoreDraftIfAvailable()
             setupDraftAutosave()
@@ -79,11 +84,16 @@ final class LogViewModel: ObservableObject {
         }
     }
 
-    func saveCurrentWeight(using repository: AppRepository) {
+    func attach(loggingUseCase: any LoggingUseCase) {
+        self.loggingUseCase = loggingUseCase
+    }
+
+    func saveCurrentWeight(using loggingUseCase: any LoggingUseCase) {
         guard let weight = parsedWeight, weight > 0 else { return }
-        repository.addWeightLog(
+        loggingUseCase.addWeightLog(
             weight: weight,
             timestamp: entryTimestamp,
+            unit: nil,
             noteText: nil,
             source: .manual
         )
@@ -91,21 +101,27 @@ final class LogViewModel: ObservableObject {
         entryTimestamp = Date()
     }
 
-    func saveUnifiedEntry(using repository: AppRepository) {
+    func saveCurrentWeight() {
+        guard let loggingUseCase else { return }
+        saveCurrentWeight(using: loggingUseCase)
+    }
+
+    func saveUnifiedEntry(using loggingUseCase: any LoggingUseCase) {
         guard let weight = parsedWeight, weight > 0 else {
             lastSaveMessage = "Enter a valid weight to save"
             return
         }
 
         let normalizedNote = noteInput.trimmingCharacters(in: .whitespacesAndNewlines)
-        repository.addWeightLog(
+        loggingUseCase.addWeightLog(
             weight: weight,
             timestamp: entryTimestamp,
+            unit: nil,
             noteText: normalizedNote.isEmpty ? nil : normalizedNote,
             source: .manual
         )
 
-        guard repository.lastErrorMessage == nil else { return }
+        guard loggingUseCase.lastErrorMessage == nil else { return }
 
         weightInput = ""
         noteInput = ""
@@ -119,7 +135,12 @@ final class LogViewModel: ObservableObject {
         }
     }
 
-    func saveNoteNow(using repository: AppRepository) {
+    func saveUnifiedEntry() {
+        guard let loggingUseCase else { return }
+        saveUnifiedEntry(using: loggingUseCase)
+    }
+
+    func saveNoteNow(using loggingUseCase: any LoggingUseCase) {
         let normalized = noteInput.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !normalized.isEmpty else { return }
 
@@ -128,7 +149,7 @@ final class LogViewModel: ObservableObject {
             return
         }
 
-        lastSavedNoteID = repository.upsertStandaloneNote(
+        lastSavedNoteID = loggingUseCase.upsertStandaloneNote(
             id: lastSavedNoteID,
             text: normalized,
             timestamp: Date()
@@ -138,6 +159,11 @@ final class LogViewModel: ObservableObject {
             lastSavedNormalizedNoteText = normalized
             lastSaveMessage = "Saved \(DateFormatting.shortDateTime.string(from: Date()))"
         }
+    }
+
+    func saveNoteNow() {
+        guard let loggingUseCase else { return }
+        saveNoteNow(using: loggingUseCase)
     }
 
     func beginVoiceCapturePress() {

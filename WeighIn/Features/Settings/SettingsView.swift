@@ -5,6 +5,11 @@ import UIKit
 
 struct SettingsView: View {
     @EnvironmentObject private var repository: AppRepository
+    private let useCase: any SettingsUseCase
+
+    init(useCase: any SettingsUseCase) {
+        self.useCase = useCase
+    }
 
     @State private var defaultUnit: WeightUnit = .lbs
     @State private var reminderEnabled = true
@@ -50,7 +55,7 @@ struct SettingsView: View {
             .onChange(of: reminderEnabled) { _, _ in savePreferences() }
             .onChange(of: reminderTime) { _, _ in savePreferences() }
             .onChange(of: iCloudBackupEnabled) { _, newValue in
-                repository.setICloudBackupEnabled(newValue)
+                useCase.setICloudBackupEnabled(newValue)
             }
             .onChange(of: gender) { _, _ in saveProfile() }
             .onChange(of: heightFeet) { _, _ in saveProfile() }
@@ -76,7 +81,7 @@ struct SettingsView: View {
                 defaultFilename: selectedExportFormat.defaultExportFilename
             ) { result in
                 if case let .failure(error) = result {
-                    repository.lastErrorMessage = "Unable to export \(selectedExportFormat.label): \(error.localizedDescription)"
+                    useCase.lastErrorMessage = "Unable to export \(selectedExportFormat.label): \(error.localizedDescription)"
                 }
             }
             .fileImporter(
@@ -89,7 +94,7 @@ struct SettingsView: View {
             }
             .sheet(isPresented: $showBackupFolderPicker) {
                 BackupFolderPicker { folderURL in
-                    repository.setBackupFolder(folderURL)
+                    useCase.setBackupFolder(folderURL)
                 }
             }
             .sheet(isPresented: $showAppleHealthImportPicker) {
@@ -131,7 +136,7 @@ struct SettingsView: View {
             }
             .confirmationDialog("Delete all app data on this device?", isPresented: $showDeleteAllDataConfirmation, titleVisibility: .visible) {
                 Button("Delete All Data", role: .destructive) {
-                    repository.deleteAllData()
+                    useCase.deleteAllData()
                 }
                 Button("Cancel", role: .cancel) {}
             }
@@ -246,7 +251,7 @@ struct SettingsView: View {
                 showBackupFolderPicker = true
             }
 
-            if let folderName = repository.backupFolderDisplayName() {
+            if let folderName = useCase.backupFolderDisplayName() {
                 Text("Folder: \(folderName)")
                     .font(.caption)
                     .foregroundStyle(AppTheme.textSecondary)
@@ -279,7 +284,7 @@ struct SettingsView: View {
             }
 
             Button("Back Up Now") {
-                repository.triggerBackupNow()
+                useCase.triggerBackupNow()
             }
             .disabled(!iCloudBackupEnabled || repository.backupInProgress)
 
@@ -313,19 +318,19 @@ struct SettingsView: View {
     }
 
     private func loadState() {
-        defaultUnit = repository.settings.defaultUnit
-        reminderEnabled = repository.settings.reminderEnabled
+        defaultUnit = useCase.settings.defaultUnit
+        reminderEnabled = useCase.settings.reminderEnabled
         reminderTime = Calendar.current.date(from: DateComponents(
-            hour: repository.settings.reminderHour,
-            minute: repository.settings.reminderMinute
+            hour: useCase.settings.reminderHour,
+            minute: useCase.settings.reminderMinute
         )) ?? Date()
         iCloudBackupEnabled = repository.iCloudBackupEnabled
 
-        birthday = repository.profile.birthday
-        gender = repository.profile.gender
-        avatarPath = repository.profile.avatarPath
+        birthday = useCase.profile.birthday
+        gender = useCase.profile.gender
+        avatarPath = useCase.profile.avatarPath
 
-        if let heightCm = repository.profile.heightCentimeters {
+        if let heightCm = useCase.profile.heightCentimeters {
             let totalInches = Int(round(heightCm / 2.54))
             heightFeet = String(totalInches / 12)
             heightInches = String(totalInches % 12)
@@ -347,14 +352,14 @@ struct SettingsView: View {
             reminderEnabled: reminderEnabled,
             reminderHour: hour,
             reminderMinute: minute,
-            hasCompletedOnboarding: repository.settings.hasCompletedOnboarding,
+            hasCompletedOnboarding: useCase.settings.hasCompletedOnboarding,
             iCloudSyncEnabled: false,
-            lastSyncAt: repository.settings.lastSyncAt,
-            lastSyncError: repository.settings.lastSyncError
+            lastSyncAt: useCase.settings.lastSyncAt,
+            lastSyncError: useCase.settings.lastSyncError
         )
 
-        guard updated != repository.settings else { return }
-        repository.updateSettings(updated)
+        guard updated != useCase.settings else { return }
+        useCase.updateSettings(updated)
     }
 
     private func saveProfile() {
@@ -374,8 +379,8 @@ struct SettingsView: View {
             avatarPath: avatarPath
         )
 
-        guard updated != repository.profile else { return }
-        repository.updateProfile(updated)
+        guard updated != useCase.profile else { return }
+        useCase.updateProfile(updated)
     }
 
     private func loadAvatar(from item: PhotosPickerItem) async {
@@ -400,7 +405,7 @@ struct SettingsView: View {
             try data.write(to: fileURL, options: .atomic)
             return fileURL.path
         } catch {
-            repository.lastErrorMessage = "Could not save profile image: \(error.localizedDescription)"
+            useCase.lastErrorMessage = "Could not save profile image: \(error.localizedDescription)"
             return nil
         }
     }
@@ -418,11 +423,11 @@ struct SettingsView: View {
     private func exportData(for format: DataTransferFormat) -> Data {
         switch format {
         case .csv:
-            return repository.exportCSV()
+            return useCase.exportCSV()
         case .json:
-            return repository.exportJSON()
+            return useCase.exportJSON()
         case .sqlite:
-            return repository.exportSQLite()
+            return useCase.exportSQLite()
         case .appleHealthZip:
             return Data()
         }
@@ -440,19 +445,19 @@ struct SettingsView: View {
             switch format {
             case .csv:
                 let data = try Data(contentsOf: url)
-                repository.importCSV(from: data)
+                useCase.importCSV(from: data)
             case .json:
                 let data = try Data(contentsOf: url)
-                repository.importJSON(from: data)
+                useCase.importJSON(from: data)
             case .sqlite:
-                repository.importSQLite(from: url)
+                useCase.importSQLite(from: url)
             case .appleHealthZip:
-                if let summary = repository.importAppleHealthZIP(from: url) {
+                if let summary = useCase.importAppleHealthZIP(from: url) {
                     appleHealthImportMessage = "Processed \(summary.processedRecords) records. Added \(summary.newRecords) new entries."
                 }
             }
         } catch {
-            repository.lastErrorMessage = "Unable to read \(format.label): \(error.localizedDescription)"
+            useCase.lastErrorMessage = "Unable to read \(format.label): \(error.localizedDescription)"
         }
     }
 }

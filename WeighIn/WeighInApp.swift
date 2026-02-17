@@ -7,7 +7,12 @@ struct WeighInApp: App {
 
     var body: some Scene {
         WindowGroup {
-            RootTabView()
+            RootTabView(
+                loggingUseCase: repository,
+                chartsUseCase: repository,
+                settingsUseCase: repository,
+                analysisUseCase: repository
+            )
                 .environmentObject(repository)
                 .onAppear {
                     repository.triggerDailyBackupIfNeeded()

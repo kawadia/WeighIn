@@ -1068,3 +1068,187 @@ private enum SQLiteValue {
     case double(Double)
     case int(Int64)
 }
+
+protocol LogStoreGateway {
+    func fetchLogs() throws -> [WeightLog]
+    func insert(_ log: WeightLog) throws
+    func update(_ log: WeightLog) throws
+    func deleteLog(id: String) throws
+}
+
+protocol NoteStoreGateway {
+    func fetchNotes() throws -> [NoteEntry]
+    func insert(_ note: NoteEntry) throws
+    func update(_ note: NoteEntry) throws
+    func deleteNote(id: String) throws
+}
+
+protocol SettingsStoreGateway {
+    func fetchSettings() throws -> AppSettings
+    func upsert(settings: AppSettings) throws
+    func updateSyncStatus(lastSyncAt: Date?, lastSyncError: String?) throws
+    func fetchSyncSettingsRecord() throws -> SyncSettingsRecord
+}
+
+protocol ProfileStoreGateway {
+    func fetchProfile() throws -> UserProfile
+    func upsert(profile: UserProfile) throws
+    func fetchSyncProfileRecord() throws -> SyncProfileRecord
+}
+
+protocol SyncStoreGateway {
+    func fetchPendingNoteRecords() throws -> [SyncNoteRecord]
+    func fetchPendingWeightRecords() throws -> [SyncWeightRecord]
+    func markNoteRecordsSynced(ids: [String]) throws
+    func markWeightRecordsSynced(ids: [String]) throws
+    func applyRemotePullPayload(_ payload: SyncPullPayload) throws
+}
+
+protocol DatabaseStoreGateway {
+    func databaseFileURL() -> URL
+    func exportDatabaseData() throws -> Data
+    func mergeDatabaseWithoutOverwriting(from sourceURL: URL) throws
+    func deleteAllData() throws
+}
+
+struct SQLiteStoreGateways {
+    let logs: any LogStoreGateway
+    let notes: any NoteStoreGateway
+    let settings: any SettingsStoreGateway
+    let profile: any ProfileStoreGateway
+    let sync: any SyncStoreGateway
+    let database: any DatabaseStoreGateway
+}
+
+extension SQLiteStore {
+    func makeGateways() -> SQLiteStoreGateways {
+        SQLiteStoreGateways(
+            logs: SQLiteLogStoreGateway(store: self),
+            notes: SQLiteNoteStoreGateway(store: self),
+            settings: SQLiteSettingsStoreGateway(store: self),
+            profile: SQLiteProfileStoreGateway(store: self),
+            sync: SQLiteSyncStoreGateway(store: self),
+            database: SQLiteDatabaseStoreGateway(store: self)
+        )
+    }
+}
+
+private struct SQLiteLogStoreGateway: LogStoreGateway {
+    let store: SQLiteStore
+
+    func fetchLogs() throws -> [WeightLog] {
+        try store.fetchWeightLogs()
+    }
+
+    func insert(_ log: WeightLog) throws {
+        try store.insert(log)
+    }
+
+    func update(_ log: WeightLog) throws {
+        try store.update(log)
+    }
+
+    func deleteLog(id: String) throws {
+        try store.deleteWeightLog(id: id)
+    }
+}
+
+private struct SQLiteNoteStoreGateway: NoteStoreGateway {
+    let store: SQLiteStore
+
+    func fetchNotes() throws -> [NoteEntry] {
+        try store.fetchNotes()
+    }
+
+    func insert(_ note: NoteEntry) throws {
+        try store.insert(note)
+    }
+
+    func update(_ note: NoteEntry) throws {
+        try store.update(note)
+    }
+
+    func deleteNote(id: String) throws {
+        try store.deleteNote(id: id)
+    }
+}
+
+private struct SQLiteSettingsStoreGateway: SettingsStoreGateway {
+    let store: SQLiteStore
+
+    func fetchSettings() throws -> AppSettings {
+        try store.fetchSettings()
+    }
+
+    func upsert(settings: AppSettings) throws {
+        try store.upsert(settings: settings)
+    }
+
+    func updateSyncStatus(lastSyncAt: Date?, lastSyncError: String?) throws {
+        try store.updateSyncStatus(lastSyncAt: lastSyncAt, lastSyncError: lastSyncError)
+    }
+
+    func fetchSyncSettingsRecord() throws -> SyncSettingsRecord {
+        try store.fetchSyncSettingsRecord()
+    }
+}
+
+private struct SQLiteProfileStoreGateway: ProfileStoreGateway {
+    let store: SQLiteStore
+
+    func fetchProfile() throws -> UserProfile {
+        try store.fetchProfile()
+    }
+
+    func upsert(profile: UserProfile) throws {
+        try store.upsert(profile: profile)
+    }
+
+    func fetchSyncProfileRecord() throws -> SyncProfileRecord {
+        try store.fetchSyncProfileRecord()
+    }
+}
+
+private struct SQLiteSyncStoreGateway: SyncStoreGateway {
+    let store: SQLiteStore
+
+    func fetchPendingNoteRecords() throws -> [SyncNoteRecord] {
+        try store.fetchPendingNoteRecords()
+    }
+
+    func fetchPendingWeightRecords() throws -> [SyncWeightRecord] {
+        try store.fetchPendingWeightRecords()
+    }
+
+    func markNoteRecordsSynced(ids: [String]) throws {
+        try store.markNoteRecordsSynced(ids: ids)
+    }
+
+    func markWeightRecordsSynced(ids: [String]) throws {
+        try store.markWeightRecordsSynced(ids: ids)
+    }
+
+    func applyRemotePullPayload(_ payload: SyncPullPayload) throws {
+        try store.applyRemotePullPayload(payload)
+    }
+}
+
+private struct SQLiteDatabaseStoreGateway: DatabaseStoreGateway {
+    let store: SQLiteStore
+
+    func databaseFileURL() -> URL {
+        store.databaseFileURL()
+    }
+
+    func exportDatabaseData() throws -> Data {
+        try store.exportDatabaseData()
+    }
+
+    func mergeDatabaseWithoutOverwriting(from sourceURL: URL) throws {
+        try store.mergeDatabaseWithoutOverwriting(from: sourceURL)
+    }
+
+    func deleteAllData() throws {
+        try store.deleteAllData()
+    }
+}

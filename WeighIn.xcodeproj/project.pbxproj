@@ -28,6 +28,10 @@
 		AA0000000000000000000212 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000112 /* SettingsView.swift */; };
 		AA0000000000000000000213 /* SyncModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000113 /* SyncModels.swift */; };
 		AA0000000000000000000214 /* CloudKitSyncService.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000114 /* CloudKitSyncService.swift */; };
+		AA0000000000000000000221 /* AppleHealthImportParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000121 /* AppleHealthImportParser.swift */; };
+		AA0000000000000000000222 /* ZIPExportExtractor.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000122 /* ZIPExportExtractor.swift */; };
+		AA0000000000000000000223 /* AIAnalysisView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000123 /* AIAnalysisView.swift */; };
+		AA0000000000000000000224 /* OnboardingFlow.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000124 /* OnboardingFlow.swift */; };
 		AA0000000000000000000215 /* TestSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000115 /* TestSupport.swift */; };
 		AA0000000000000000000216 /* AppRepositoryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000116 /* AppRepositoryTests.swift */; };
 		AA0000000000000000000217 /* CSVCodecTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000117 /* CSVCodecTests.swift */; };
@@ -76,6 +80,10 @@
 		AA0000000000000000000118 /* LogViewModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LogViewModelTests.swift; sourceTree = "<group>"; };
 		AA0000000000000000000119 /* ModelDefaultsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelDefaultsTests.swift; sourceTree = "<group>"; };
 		AA0000000000000000000120 /* Resources/Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Resources/Assets.xcassets; sourceTree = "<group>"; };
+		AA0000000000000000000121 /* AppleHealthImportParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppleHealthImportParser.swift; sourceTree = "<group>"; };
+		AA0000000000000000000122 /* ZIPExportExtractor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZIPExportExtractor.swift; sourceTree = "<group>"; };
+		AA0000000000000000000123 /* AIAnalysisView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIAnalysisView.swift; sourceTree = "<group>"; };
+		AA0000000000000000000124 /* OnboardingFlow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingFlow.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -145,11 +153,13 @@
 			isa = PBXGroup;
 			children = (
 				AA0000000000000000000109 /* AppRepository.swift */,
+				AA0000000000000000000121 /* AppleHealthImportParser.swift */,
 				AA000000000000000000010A /* CSVCodec.swift */,
 				AA000000000000000000010B /* NotificationScheduler.swift */,
 				AA000000000000000000010C /* SQLiteStore.swift */,
 				AA0000000000000000000113 /* SyncModels.swift */,
 				AA0000000000000000000114 /* CloudKitSyncService.swift */,
+				AA0000000000000000000122 /* ZIPExportExtractor.swift */,
 			);
 			path = Data;
 			sourceTree = "<group>";
@@ -159,6 +169,8 @@
 			children = (
 				AA0000000000000000000008 /* Log */,
 				AA0000000000000000000009 /* Charts */,
+				AA000000000000000000000D /* Analysis */,
+				AA000000000000000000000E /* Onboarding */,
 				AA000000000000000000000A /* Settings */,
 			);
 			path = Features;
@@ -189,6 +201,22 @@
 				AA0000000000000000000112 /* SettingsView.swift */,
 			);
 			path = Settings;
+			sourceTree = "<group>";
+		};
+		AA000000000000000000000D /* Analysis */ = {
+			isa = PBXGroup;
+			children = (
+				AA0000000000000000000123 /* AIAnalysisView.swift */,
+			);
+			path = Analysis;
+			sourceTree = "<group>";
+		};
+		AA000000000000000000000E /* Onboarding */ = {
+			isa = PBXGroup;
+			children = (
+				AA0000000000000000000124 /* OnboardingFlow.swift */,
+			);
+			path = Onboarding;
 			sourceTree = "<group>";
 		};
 		AA000000000000000000000B /* Utilities */ = {
@@ -330,6 +358,10 @@
 				AA0000000000000000000212 /* SettingsView.swift in Sources */,
 				AA0000000000000000000213 /* SyncModels.swift in Sources */,
 				AA0000000000000000000214 /* CloudKitSyncService.swift in Sources */,
+				AA0000000000000000000221 /* AppleHealthImportParser.swift in Sources */,
+				AA0000000000000000000222 /* ZIPExportExtractor.swift in Sources */,
+				AA0000000000000000000223 /* AIAnalysisView.swift in Sources */,
+				AA0000000000000000000224 /* OnboardingFlow.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

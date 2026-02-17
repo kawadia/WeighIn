@@ -2,12 +2,19 @@ import SwiftUI
 
 struct LogView: View {
     @EnvironmentObject private var repository: AppRepository
-    @StateObject private var model = LogViewModel()
+    private let useCase: any LoggingUseCase
+    @StateObject private var model: LogViewModel
     @State private var editingLog: WeightLog?
     @State private var pendingDeleteLog: WeightLog?
     @FocusState private var noteEditorFocused: Bool
 
+    init(useCase: any LoggingUseCase) {
+        self.useCase = useCase
+        _model = StateObject(wrappedValue: LogViewModel(loggingUseCase: useCase))
+    }
+
     var body: some View {
+        let _ = repository.logs.count
         GeometryReader { _ in
             ScrollView {
                 VStack(spacing: 12) {
@@ -15,7 +22,7 @@ struct LogView: View {
 
                     EntryEditorCard(
                         weightText: model.weightInput.isEmpty ? "--" : model.weightInput,
-                        unitLabel: repository.settings.defaultUnit.label,
+                        unitLabel: useCase.settings.defaultUnit.label,
                         timestamp: $model.entryTimestamp,
                         noteInput: $model.noteInput,
                         noteFocused: $noteEditorFocused,
@@ -26,7 +33,7 @@ struct LogView: View {
                             model.handleKey(key)
                         },
                         onSave: {
-                            model.saveUnifiedEntry(using: repository)
+                            model.saveUnifiedEntry()
                             noteEditorFocused = false
                         }
                     ) {
@@ -86,8 +93,7 @@ struct LogView: View {
         }
         .background(AppTheme.background.ignoresSafeArea())
         .sheet(item: $editingLog) { log in
-            EditLogSheet(log: log)
-                .environmentObject(repository)
+            EditLogSheet(log: log, useCase: useCase)
         }
         .onDisappear {
             model.stopVoiceRecordingIfNeeded()
@@ -102,7 +108,7 @@ struct LogView: View {
         )) {
             Button("Delete", role: .destructive) {
                 guard let log = pendingDeleteLog else { return }
-                repository.deleteWeightLog(log)
+                useCase.deleteWeightLog(log)
                 pendingDeleteLog = nil
             }
             Button("Cancel", role: .cancel) {
@@ -141,7 +147,7 @@ struct LogView: View {
                 .font(.headline)
                 .foregroundStyle(AppTheme.textPrimary)
 
-            if repository.logs.isEmpty {
+            if useCase.logs.isEmpty {
                 Text("No entries yet.")
                     .font(.subheadline)
                     .foregroundStyle(AppTheme.textSecondary)
@@ -152,14 +158,14 @@ struct LogView: View {
                             .fill(AppTheme.surface)
                     )
             } else {
-                ForEach(Array(repository.logs.prefix(5))) { log in
+                ForEach(Array(useCase.logs.prefix(5))) { log in
                     VStack(alignment: .leading, spacing: 6) {
                         HStack(spacing: 8) {
                             Text(
                                 String(
                                     format: "%.1f %@",
-                                    repository.convertedWeight(log, to: repository.settings.defaultUnit),
-                                    repository.settings.defaultUnit.label
+                                    useCase.convertedWeight(log, to: useCase.settings.defaultUnit),
+                                    useCase.settings.defaultUnit.label
                                 )
                             )
                             .font(.headline)
@@ -198,7 +204,7 @@ struct LogView: View {
                             .font(.caption)
                             .foregroundStyle(AppTheme.textSecondary)
 
-                        if let note = repository.note(for: log), !note.text.isEmpty {
+                        if let note = useCase.note(for: log), !note.text.isEmpty {
                             Text(note.text)
                                 .font(.caption)
                                 .foregroundStyle(AppTheme.textSecondary)
@@ -402,17 +408,18 @@ struct ReflectionNotePanel<Accessory: View>: View {
 
 private struct EditLogSheet: View {
     @Environment(\.dismiss) private var dismiss
-    @EnvironmentObject private var repository: AppRepository
 
     let log: WeightLog
+    let useCase: any LoggingUseCase
 
     @State private var entryDate: Date
     @State private var weightInput: String
     @State private var noteInput: String = ""
     @FocusState private var noteEditorFocused: Bool
 
-    init(log: WeightLog) {
+    init(log: WeightLog, useCase: any LoggingUseCase) {
         self.log = log
+        self.useCase = useCase
         _entryDate = State(initialValue: log.timestamp)
         _weightInput = State(initialValue: String(format: "%.1f", log.weight))
     }
@@ -453,7 +460,7 @@ private struct EditLogSheet: View {
                 }
             }
             .onAppear {
-                noteInput = repository.note(for: log)?.text ?? ""
+                noteInput = useCase.note(for: log)?.text ?? ""
             }
         }
     }
@@ -481,7 +488,7 @@ private struct EditLogSheet: View {
 
     private func save() {
         guard let weight = Double(weightInput), weight > 0 else { return }
-        repository.updateWeightLog(log, weight: weight, timestamp: entryDate, noteText: noteInput)
+        useCase.updateWeightLog(log, weight: weight, timestamp: entryDate, noteText: noteInput)
         noteEditorFocused = false
         dismiss()
     }
